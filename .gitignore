@@ -1,0 +1,42 @@
+# ---- Arduino / build output ----
+build/
+*.bin
+*.elf
+*.hex
+*.map
+*.o
+*.a
+
+# ---- PlatformIO ----
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# ---- VS Code (keep shared settings, ignore personal ones) ----
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# ---- JetBrains / CLion ----
+.idea/
+cmake-build-*/
+
+# ---- Python (diagram generator) ----
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# ---- Secrets (Wi-Fi credentials, API keys) ----
+secrets.h
+arduino_secrets.h
+
+# ---- OS files ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Editor backups ----
+*~
+*.swp
+*.bak
