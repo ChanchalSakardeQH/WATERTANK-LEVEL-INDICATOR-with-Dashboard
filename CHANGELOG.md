@@ -7,6 +7,53 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [2.10.1] - 2026-09-30
+
+### Fixed
+- ESP8266 build error "reference to 'Session' is ambiguous": the ESP8266 core exposes its own `BearSSL::Session` globally. The admin session type in `auth.h` is renamed `AuthSession` (and `sessions` → `authSessions`). No change in behaviour; ESP32 builds were not affected.
+
+## [2.10.0] - 2026-09-30
+
+### Added
+- **Firmware update over Wi-Fi (OTA)**, admin only: Setup → Firmware update.
+  - Upload the `.bin` from "Export Compiled Binary". The dashboard checks the ESP image header, the product and version marker, the board (ESP32 / ESP8266), the size and downgrades before uploading.
+  - Upload progress is shown, the image is verified before switching, and the page waits for the restart and confirms the new version.
+  - Settings, calibration, history and logs are kept. Endpoint `POST /api/ota`.
+- **Update rate profiles** (Setup → Update rate):
+  - Eco (**default**): sensor every 5 s, dashboard every 10 s.
+  - Balanced: 2 s / 5 s. Responsive: 0.5 s / 2 s. Custom: sensor 0.2–30 s, dashboard 2–60 s.
+  - The card shows readings per hour, reaction time and fault detection time.
+  - Existing devices switch to Eco after updating.
+- **Live mode:** while an admin has the Setup tab open, the sensor is read every 0.5 s for calibration, returning to the profile 20 s later.
+- Median window adapts to the rate (5 readings at 2 s and slower, otherwise 7). "No echo" is declared after about 15 s of missed readings (3–10 readings).
+- Update rate included in settings export/import and in the report's "Settings used" page.
+- Start-up banner carries a board tag (`| board esp32` / `| board esp8266`) used to validate OTA files. `/api/status` adds `rate`, `boardTag`, `otaMax`.
+
+### Changed
+- Power saving no longer sets the sensor rate; the Update rate profile does. Performance mode only affects CPU, radio, LED refresh and Serial output.
+
+### Fixed
+- Switching tabs refreshes the data immediately instead of waiting for the next scheduled refresh.
+- Setup reminder banners are shown to admins only.
+
+## [2.9.0] - 2026-09-30
+
+### Added
+- **Admin and viewer access** (`auth.h`):
+  - Viewers (no login) see Overview and Analytics only. Analytics settings and Clear history are shown but disabled.
+  - Setup and Log tabs, all settings changes, calibration, Wi-Fi, restart and reset need an admin login. The server rejects them with 403 for viewers.
+  - Challenge-response login: the password never crosses the network, and a salted SHA-256 hash is stored in EEPROM (offset 416). Up to 3 sessions, 12 h idle timeout, 1-minute lockout after 5 wrong attempts.
+  - Default password `admin`, which must be changed at the first login. Hold BOOT/FLASH for 10 s to reset it (the strip flashes red).
+  - Endpoints `/api/auth`, `/api/login`, `/api/logout`, `/api/password`. `/api/status` reports `auth.admin` and `auth.mustChange`.
+- **Units: mm, cm or inches** for every measurement in the dashboard and PDF report. Device default (Setup → Display & sensor, `units` setting) plus a per-browser override in the Water level card.
+- **Settings export and import** (JSON) in the new **Admin & backup** card. Passwords are never exported.
+- **Settings ID:** a fingerprint of the configuration, shown in the Admin card, the export file and the PDF.
+- PDF report: new **"Settings used for this report"** section (page 3) listing every setting behind the figures, and the Settings ID in the details table and footer.
+
+### Changed
+- PDF footer: the GitHub source line is removed. It now shows the firmware version and Settings ID.
+- **Defaults** keeps the unit setting.
+
 ## [2.8.1] - 2026-09-30
 
 ### Fixed
@@ -211,7 +258,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - `STRIP_REVERSED` option for strips mounted top-down.
 - Startup sweep animation.
 
-[Unreleased]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.8.1...HEAD
+[Unreleased]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.10.1...HEAD
+[2.10.1]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.10.0...v2.10.1
+[2.10.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.9.0...v2.10.0
+[2.9.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.8.1...v2.9.0
 [2.8.1]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.6.1...v2.7.0

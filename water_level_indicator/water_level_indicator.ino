@@ -21,7 +21,7 @@
 */
 
 /*
-  Water Tanks Monitor System (WTMS)                        firmware 2.8.1
+  Water Tanks Monitor System (WTMS)                        firmware 2.10.1
   ESP32 DevKit or ESP8266 NodeMCU + AJ-SR04M / JSN-SR04T + WS2812B strip (1-300 LEDs, set in the dashboard)
 
   - Each device is named in the dashboard: society / organisation, building, tank.
@@ -52,6 +52,7 @@
   #include <esp_system.h>
   using WebServerT = WebServer;
   #define BOARD_NAME "ESP32"
+  #define BOARD_TAG  "esp32"      // also marks firmware files for the OTA check
   #define WIFI_OPEN  WIFI_AUTH_OPEN
   #define LED_PIN   16   // G16 -> 330R -> strip DIN
   // Sensor on 4 neighbouring pins: 3V3, GND, D15, D2 (one 4-pin connector).
@@ -65,6 +66,7 @@
   #include <ESP8266mDNS.h>
   using WebServerT = ESP8266WebServer;
   #define BOARD_NAME "ESP8266 NodeMCU"
+  #define BOARD_TAG  "esp8266"
   #define WIFI_OPEN  ENC_TYPE_NONE
   ADC_MODE(ADC_VCC);     // lets the ESP8266 measure its own supply voltage (A0 is not used)
   #define LED_PIN    4   // D2 -> 330R -> strip DIN
@@ -75,14 +77,22 @@
 #endif
 
 #include <DNSServer.h>
+#if defined(ESP32)
+  #include <Update.h>
+  #define OTA_ERR() String(Update.errorString())
+#else
+  #include <Updater.h>
+  #define OTA_ERR() Update.getErrorString()
+#endif
 #include <time.h>
 #include <EEPROM.h>
 #include <Adafruit_NeoPixel.h>
 #include "dashboard_html.h"
 #include "event_log.h"
+#include "auth.h"
 #include "history.h"
 
-#define FW_VERSION  "2.8.1"
+#define FW_VERSION  "2.10.1"
 #define PRODUCT     "Water Tanks Monitor System"
 #define DEFAULT_LEDS 30
 #define MAX_LEDS     300
@@ -90,12 +100,11 @@
 // ================= Timing =================
 const float         MAX_VALID_CM     = 450.0;   // longer echoes mean "no target found"
 const unsigned long ECHO_TIMEOUT_US  = 27000;   // ~460 cm
-const unsigned long PING_FAST_MS     = 70;      // performance mode: ~14 readings per second
-const unsigned long PING_ECO_MS      = 500;     // power saving: 2 readings per second
+const unsigned long LIVE_PING_MS     = 500;     // temporary fast reading while an admin calibrates
+const unsigned long LIVE_HOLD_MS     = 20000;   // live mode ends 20 s after the Setup tab stops asking
 const unsigned long AP_DEMAND_IDLE   = 600000;  // on-demand hotspot: off after 10 min without devices
 const int           BOOT_BTN         = 0;       // BOOT button (ESP32) / FLASH button (NodeMCU), GPIO0
-const int           MEDIAN_N         = 7;       // median of the last 7 readings
-const int           FAIL_LIMIT       = 10;      // consecutive misses before "sensor fault"
+const int           MEDIAN_N         = 7;       // up to 7 readings in the median (5 at slow rates)
 const unsigned long CONNECT_TIMEOUT  = 20000;   // give up a Wi-Fi attempt after 20 s
 const unsigned long RETRY_INTERVAL   = 60000;   // retry home Wi-Fi every 60 s
 const unsigned long AP_OFF_DELAY     = 30000;   // hotspot stays 30 s after connecting
@@ -122,7 +131,19 @@ struct Settings {
   // added in 2.8.0 (stored in former padding bytes, which read as 0 = the production defaults)
   uint8_t  perfMode;     // 0 power saving (production), 1 performance
   uint8_t  txLevel;      // Wi-Fi transmit power: 0 medium, 1 high, 2 low
+  // added in 2.9.0
+  uint8_t  units;        // dashboard / report length unit: 0 cm, 1 mm, 2 inch
+  // added in 2.10.0 (older saves read as 0 = the Eco profile)
+  uint8_t  rateProfile;  // 0 eco, 1 balanced, 2 responsive, 3 custom
+  uint16_t sensorMs;     // custom: time between sensor readings
+  uint8_t  refreshS;     // custom: dashboard refresh (seconds)
 };
+
+// ================= Update rate profiles =================
+// sensor interval, dashboard refresh. Eco is the default for long-term installations.
+struct RatePreset { uint16_t sensorMs; uint8_t refreshS; };
+const RatePreset RATE_PRESETS[3] = {{5000, 10}, {2000, 5}, {500, 2}};
+const char* const RATE_NAMES[4] = {"eco", "balanced", "responsive", "custom"};
 const uint32_t SETTINGS_MAGIC = 0x59544B32;   // "YTK2"
 Settings cfg;
 
@@ -322,7 +343,8 @@ void setDefaults() {
   cfg.distEmpty = 120.0;  cfg.distFull = 25.0;  cfg.lowAlarm = 0.10;
   cfg.trigUs = 100;       cfg.brightness = 150;
   cfg.reversed = 0;       cfg.colorByLevel = 0;  cfg.apMode = 0;
-  cfg.perfMode = 0;       cfg.txLevel = 0;
+  cfg.perfMode = 0;       cfg.txLevel = 0;  cfg.units = 0;
+  cfg.rateProfile = 0;    cfg.sensorMs = 5000;  cfg.refreshS = 10;
   cfg.numLeds = DEFAULT_LEDS;
   setAnalyticsDefaults();
 }
@@ -346,6 +368,13 @@ void loadStorage() {
   }
   if (cfg.numLeds < 1 || cfg.numLeds > MAX_LEDS) {   // settings saved by 2.1.0 or older
     cfg.numLeds = DEFAULT_LEDS;
+    saveSettings();
+  }
+  if (cfg.units > 2) { cfg.units = 0; saveSettings(); }
+  if (cfg.rateProfile > 3 || cfg.sensorMs < 200 || cfg.sensorMs > 30000 || cfg.refreshS < 2 || cfg.refreshS > 60) {
+    if (cfg.rateProfile > 3) cfg.rateProfile = 0;
+    if (cfg.sensorMs < 200 || cfg.sensorMs > 30000) cfg.sensorMs = 5000;
+    if (cfg.refreshS < 2 || cfg.refreshS > 60) cfg.refreshS = 10;
     saveSettings();
   }
   if (cfg.apMode > 2 || cfg.perfMode > 1 || cfg.txLevel > 2) {
@@ -374,6 +403,7 @@ void loadStorage() {
   EEPROM.get(ID_ADDR, ident);
   if (ident.magic != ID_MAGIC) memset(&ident, 0, sizeof(ident));
   ident.org[48] = 0; ident.building[32] = 0; ident.tank[32] = 0;
+  authLoad();
   EEPROM.get(PROF_ADDR, prof);
   if (prof.magic != PROF_MAGIC || prof.usage > 1 || prof.location > 3 || prof.shape > 1) {
     memset(&prof, 0, sizeof(prof));
@@ -394,6 +424,15 @@ float readDistanceOnce() {
   return cm > MAX_VALID_CM ? -1 : cm;
 }
 
+unsigned long liveUntil = 0;            // live mode while an admin has the Setup tab open
+uint16_t sensorIntervalMs() {
+  if (liveUntil && millis() < liveUntil) return LIVE_PING_MS;
+  return cfg.rateProfile < 3 ? RATE_PRESETS[cfg.rateProfile].sensorMs : cfg.sensorMs;
+}
+uint8_t refreshSeconds() { return cfg.rateProfile < 3 ? RATE_PRESETS[cfg.rateProfile].refreshS : cfg.refreshS; }
+int medianSize()  { return sensorIntervalMs() >= 2000 ? 5 : 7; }              // shorter window when readings are slow
+int failLimit()   { return constrain(15000 / (int)sensorIntervalMs(), 3, 10); } // about 15 s of misses, 3..10 readings
+
 float medianOfSamples() {
   float v[MEDIAN_N];
   for (int i = 0; i < sampleCount; i++) v[i] = samples[i];
@@ -408,19 +447,22 @@ float medianOfSamples() {
 
 void sensorTask() {
   static unsigned long last = 0;
-  if (millis() - last < (cfg.perfMode ? PING_FAST_MS : PING_ECO_MS)) return;
+  if (millis() - last < sensorIntervalMs()) return;
   last = millis();
+  static int lastN = MEDIAN_N;
+  int n = medianSize();
+  if (n != lastN) { lastN = n; sampleIdx = 0; if (sampleCount > n) sampleCount = n; }
 
   float d = readDistanceOnce();
   if (d > 0) {
     samples[sampleIdx] = d;
-    sampleIdx = (sampleIdx + 1) % MEDIAN_N;
-    if (sampleCount < MEDIAN_N) sampleCount++;
+    sampleIdx = (sampleIdx + 1) % n;
+    if (sampleCount < n) sampleCount++;
     failStreak = 0;
   } else if (failStreak < 1000) {
     failStreak++;
   }
-  if (failStreak >= FAIL_LIMIT) {
+  if (failStreak >= failLimit()) {
     sensorOK = false; sampleCount = 0; sampleIdx = 0; currentDistance = -1;
   } else if (sampleCount >= 3) {
     currentDistance = medianOfSamples();
@@ -694,6 +736,18 @@ void buttonTask() {
   static bool handled = false;
   int v = digitalRead(BOOT_BTN);
   if (v != last) { last = v; changedAt = millis(); handled = false; }
+  static bool resetDone = false;
+  if (v == HIGH) resetDone = false;
+  if (v == LOW && !resetDone && millis() - changedAt > 10000) {   // held 10 s: admin password back to "admin"
+    resetDone = true;
+    authResetDefault();
+    logWrite('W', "sys", "Admin password reset to default with the BOOT button");
+    for (int i = 0; i < 3; i++) {                                 // flash the strip red 3 times
+      strip.fill(strip.Color(255, 0, 0)); strip.show(); delay(150);
+      strip.clear(); strip.show(); delay(150);
+    }
+    ledsForce = true;
+  }
   if (v == LOW && !handled && millis() - changedAt > 50) {
     handled = true;
     if (!apActive) startAP("BOOT button pressed");
@@ -794,6 +848,13 @@ void sendResult(bool ok, const String& message) {
                            ",\"message\":\"" + jsonEscape(message) + "\"}");
 }
 
+// Admin-only endpoints start with this; viewers get 403 and the dashboard shows the login
+bool needAdmin() {
+  if (authIsAdmin(server)) return true;
+  sendJson(403, "{\"ok\":false,\"auth\":false,\"message\":\"Admin login required\"}");
+  return false;
+}
+
 void handleDashboard() {
   server.sendHeader("Cache-Control", "no-store");
   server.send_P(200, "text/html", DASHBOARD_HTML);
@@ -845,6 +906,22 @@ void handleStatus() {
   j += ",\"perfMode\":";    j += String(cfg.perfMode);
   j += ",\"txLevel\":";     j += String(cfg.txLevel);
   j += ",\"cpuMhz\":";      j += String(cpuMhz());
+  j += ",\"units\":";       j += String(cfg.units);
+  j += ",\"boardTag\":\"" BOARD_TAG "\"";
+  j += ",\"otaMax\":";      j += String((uint32_t)ESP.getFreeSketchSpace());
+  j += ",\"rate\":{\"profile\":"; j += String(cfg.rateProfile);
+  j += ",\"sensorMs\":";    j += String(cfg.rateProfile < 3 ? RATE_PRESETS[cfg.rateProfile].sensorMs : cfg.sensorMs);
+  j += ",\"refreshS\":";    j += String(refreshSeconds());
+  j += ",\"customSensorMs\":"; j += String(cfg.sensorMs);
+  j += ",\"customRefreshS\":"; j += String(cfg.refreshS);
+  j += ",\"median\":";      j += String(medianSize());
+  j += ",\"live\":";        j += liveUntil && millis() < liveUntil ? "true" : "false";
+  j += "}";
+  bool admin = authIsAdmin(server);
+  if (admin && server.hasArg("live")) liveUntil = millis() + LIVE_HOLD_MS;   // Setup tab open: read faster
+  j += ",\"auth\":{\"admin\":"; j += admin ? "true" : "false";
+  j += ",\"mustChange\":";   j += admin && auth.mustChange ? "true" : "false";
+  j += "}";
   j += ",\"filling\":";      j += fd.filling ? "true" : "false";
   j += ",\"fillRate\":";     j += String(fd.filling ? fd.rateMmMin / 10.0 : 0.0, 2);
   j += ",\"fillStart\":";    j += String(fd.filling ? fd.startT : 0);
@@ -888,6 +965,7 @@ void handleStatus() {
 }
 
 void handleCalibrate() {
+  if (!needAdmin()) return;
   float e = cfg.distEmpty, f = cfg.distFull;
   String point = server.arg("point");
   if (point == "empty" || point == "full") {
@@ -909,9 +987,12 @@ void handleCalibrate() {
 }
 
 void handleSettings() {
+  if (!needAdmin()) return;
   bool defaults = server.hasArg("defaults");
   uint16_t oldLeds = cfg.numLeds;
-  uint8_t oldAp = cfg.apMode, oldPerf = cfg.perfMode, oldTx = cfg.txLevel;
+  uint8_t oldAp = cfg.apMode, oldPerf = cfg.perfMode, oldTx = cfg.txLevel, oldUnits = cfg.units;
+  uint8_t oldRate = cfg.rateProfile, oldRefresh = cfg.refreshS;
+  uint16_t oldSensorMs = cfg.sensorMs;
   uint32_t oldCap = cfg.capacityL;
   if (defaults) {
     setDefaults();
@@ -919,6 +1000,8 @@ void handleSettings() {
     cfg.apMode = oldAp;                 // Wi-Fi and power are not display settings
     cfg.perfMode = oldPerf;
     cfg.txLevel = oldTx;
+    cfg.units = oldUnits;               // measurement unit is a site preference
+    cfg.rateProfile = oldRate; cfg.sensorMs = oldSensorMs; cfg.refreshS = oldRefresh;
     cfg.capacityL = oldCap;             // tank size is hardware too
   } else {
     if (server.hasArg("leds"))         cfg.numLeds      = constrain(server.arg("leds").toInt(), 1, MAX_LEDS);
@@ -938,6 +1021,14 @@ void handleSettings() {
       if (apArg == 2) apIdleSince = millis();
     }
     bool power = false;
+    if (server.hasArg("units")) cfg.units = constrain(server.arg("units").toInt(), 0, 2);
+    if (server.hasArg("rate") || server.hasArg("sensorMs") || server.hasArg("refreshS")) {
+      if (server.hasArg("rate"))     cfg.rateProfile = constrain(server.arg("rate").toInt(), 0, 3);
+      if (server.hasArg("sensorMs")) cfg.sensorMs = constrain(server.arg("sensorMs").toInt(), 200, 30000);
+      if (server.hasArg("refreshS")) cfg.refreshS = constrain(server.arg("refreshS").toInt(), 2, 60);
+      logWrite('I', "cfg", String("Setting: update rate ") + RATE_NAMES[cfg.rateProfile] + ", sensor every " +
+                            String(sensorIntervalMs() / 1000.0, 1) + " s, dashboard every " + String(refreshSeconds()) + " s");
+    }
     if (server.hasArg("perf")) { uint8_t v = constrain(server.arg("perf").toInt(), 0, 1); power |= v != cfg.perfMode; cfg.perfMode = v; }
     if (server.hasArg("tx"))   { uint8_t v = constrain(server.arg("tx").toInt(), 0, 2);   power |= v != cfg.txLevel;  cfg.txLevel = v; }
     if (power) logWrite('I', "cfg", String("Setting: ") + (cfg.perfMode ? "performance mode" : "power saving") +
@@ -960,6 +1051,7 @@ void handleSettings() {
 }
 
 void handleScan() {
+  if (!needAdmin()) return;
   if (server.hasArg("start")) {
     if (!(WiFi.getMode() & WIFI_STA)) WiFi.mode(WIFI_AP_STA);   // scanning needs the station interface
     WiFi.scanDelete();
@@ -998,6 +1090,7 @@ void handleScan() {
 }
 
 void handleWifiConnect() {
+  if (!needAdmin()) return;
   String ssid = server.arg("ssid");
   String pass = server.arg("pass");
   if (ssid.length() == 0 || ssid.length() > 32)
@@ -1011,17 +1104,19 @@ void handleWifiConnect() {
 }
 
 void handleWifiForget() {
+  if (!needAdmin()) return;
   pendingForgetAt = millis() + 500;
   sendResult(true, "Forgetting Wi-Fi. The hotspot stays on.");
 }
 
 void handleRestart() {
+  if (!needAdmin()) return;
   logWrite('I', "sys", "Restart requested from dashboard");
   restartAt = millis() + 1000;
   sendResult(true, "Restarting...");
 }
 
-void handleLog()      { logStream(server, server.hasArg("download")); }
+void handleLog()      { if (!needAdmin()) return; logStream(server, server.hasArg("download")); }
 
 void handleHistory() {
   const char* files[] = {HIST_OLD, HIST_FILE};
@@ -1032,6 +1127,7 @@ void handleFills() {
   streamFiles(server, files, 2, "application/octet-stream", nullptr);
 }
 void handleSite() {
+  if (!needAdmin()) return;
   if (server.hasArg("org"))      setIdField(ident.org, sizeof(ident.org), server.arg("org"));
   if (server.hasArg("building")) setIdField(ident.building, sizeof(ident.building), server.arg("building"));
   if (server.hasArg("tank"))     setIdField(ident.tank, sizeof(ident.tank), server.arg("tank"));
@@ -1044,6 +1140,7 @@ void handleSite() {
                           : "Site details saved");
 }
 void handleProfile() {
+  if (!needAdmin()) return;
   auto num = [](const char* k, long lo, long hi, long cur) -> long {
     return server.hasArg(k) ? constrain(server.arg(k).toInt(), lo, hi) : cur;
   };
@@ -1066,15 +1163,97 @@ void handleProfile() {
   sendResult(true, "Tank profile saved");
 }
 void handleHistoryClear() {
+  if (!needAdmin()) return;
   historyClear();
   logWrite('I', "tank", "Tank history cleared from dashboard");
   sendResult(true, "History cleared");
 }
 void handleLogClear() {
+  if (!needAdmin()) return;
   logClear();
   logWrite('I', "sys", "Log cleared from dashboard");
   sendResult(true, "Log cleared");
 }
+void handleAuth() {                       // salt + one-time nonce for the login challenge
+  authNonce = randomHex(16);
+  authNonceAt = millis();
+  sendJson(200, "{\"salt\":\"" + authSaltHex() + "\",\"nonce\":\"" + authNonce + "\"}");
+}
+void handleLogin() {
+  String err = authCheckProof(server.arg("proof"));
+  if (err.length()) {
+    logWrite('W', "sys", "Admin login failed: " + err);
+    return sendResult(false, err);
+  }
+  String t = authNewSession();
+  logWrite('I', "sys", "Admin logged in");
+  sendJson(200, String("{\"ok\":true,\"message\":\"Logged in\",\"token\":\"") + t +
+                "\",\"mustChange\":" + (auth.mustChange ? "true" : "false") + "}");
+}
+void handleLogout() {
+  authEndSession(server.arg("auth"));
+  sendResult(true, "Logged out");
+}
+void handlePassword() {                    // new hash = SHA256(saltHex + newPassword), made in the browser
+  if (!needAdmin()) return;
+  uint8_t tmp[32];
+  String h = server.arg("hash");
+  if (!fromHex(h, tmp, 32)) return sendResult(false, "Invalid password data");
+  authSetPassword(h, false);
+  logWrite('I', "sys", "Admin password changed");
+  sendResult(true, "Password changed");
+}
+
+// ================= Firmware update over Wi-Fi (OTA) =================
+// The dashboard uploads the .bin from Arduino IDE "Sketch > Export Compiled Binary".
+// It is written to the spare app slot; the device only boots it after a complete, verified write.
+// Settings, Wi-Fi, calibration, history and logs are kept.
+bool   otaAllowed = false;
+String otaError;
+size_t otaBytes = 0;
+void handleOtaUpload() {
+  HTTPUpload& up = server.upload();
+  if (up.status == UPLOAD_FILE_START) {
+    otaError = "";
+    otaBytes = 0;
+    otaAllowed = authIsAdmin(server);            // token is in the URL (?auth=...)
+    if (!otaAllowed) { otaError = "Admin login required"; return; }
+    logWrite('I', "sys", "Firmware update started: " + up.filename);
+#if defined(ESP32)
+    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) otaError = OTA_ERR();
+#else
+    uint32_t space = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
+    if (!Update.begin(space)) otaError = OTA_ERR();
+#endif
+  } else if (up.status == UPLOAD_FILE_WRITE) {
+    if (!otaAllowed || otaError.length()) return;
+    if (Update.write(up.buf, up.currentSize) != up.currentSize) otaError = OTA_ERR();
+    otaBytes += up.currentSize;
+  } else if (up.status == UPLOAD_FILE_END) {
+    if (!otaAllowed || otaError.length()) return;
+    if (!Update.end(true)) otaError = OTA_ERR();   // verifies the image before switching to it
+  } else if (up.status == UPLOAD_FILE_ABORTED) {
+    if (otaAllowed && !otaError.length()) {
+#if defined(ESP32)
+      Update.abort();
+#else
+      Update.end(false);
+#endif
+      otaError = "Upload interrupted";
+    }
+  }
+}
+void handleOtaDone() {
+  if (!otaAllowed) return sendJson(403, "{\"ok\":false,\"auth\":false,\"message\":\"Admin login required\"}");
+  if (otaError.length()) {
+    logWrite('E', "sys", "Firmware update failed: " + otaError);
+    return sendResult(false, "Update failed: " + otaError + ". The current firmware keeps running.");
+  }
+  logWrite('I', "sys", "Firmware update installed (" + String(otaBytes / 1024) + " KB). Restarting.");
+  sendResult(true, "Update installed. The device restarts now.");
+  restartAt = millis() + 1500;
+}
+
 void handleTime() {                      // browser tells the device the time (works offline)
   uint32_t t = strtoul(server.arg("epoch").c_str(), nullptr, 10);
   if (!logEpochBase && t > 1700000000) {
@@ -1113,7 +1292,7 @@ void setup() {
   Serial.begin(115200);
   delay(200);
   Serial.println();
-  Serial.println(F(PRODUCT " " FW_VERSION " | woodyouloveit.com"));
+  Serial.println(F(PRODUCT " " FW_VERSION " | woodyouloveit.com | board " BOARD_TAG));
   Serial.println(F("(C) 2026 Chanchal Sakarde. All Rights Reserved. Open source under GPL-3.0."));
   resetReason = getResetReason();
   loadStorage();
@@ -1198,6 +1377,11 @@ void setup() {
   server.on("/api/history/clear", HTTP_POST, handleHistoryClear);
   server.on("/api/site",          HTTP_POST, handleSite);
   server.on("/api/profile",       HTTP_POST, handleProfile);
+  server.on("/api/auth",          HTTP_GET,  handleAuth);
+  server.on("/api/login",         HTTP_POST, handleLogin);
+  server.on("/api/logout",        HTTP_POST, handleLogout);
+  server.on("/api/password",      HTTP_POST, handlePassword);
+  server.on("/api/ota",           HTTP_POST, handleOtaDone, handleOtaUpload);
   server.onNotFound(handleNotFound);
   server.begin();
   lastLoopAt = millis();

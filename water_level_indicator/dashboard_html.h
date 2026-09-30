@@ -66,8 +66,8 @@ main{max-width:1100px;margin:0 auto;padding:16px;display:grid;gap:16px;grid-temp
 #aKpi{grid-area:akpi}#aChart{grid-area:achart}#aMotor{grid-area:amotor}#aUse{grid-area:ause}#aHour{grid-area:ahour}#aNight{grid-area:anight}#aSet{grid-area:aset}
 #banners{grid-area:ban}
 #tabOverview:has(#banners[hidden]){grid-template-areas:'level glance'}#cLevel{grid-area:level}#cGlance{grid-area:glance}
-#tabSetup{grid-template-columns:1fr 1fr;grid-template-areas:'prof cal' 'site cal' 'site disp' 'power disp' 'power dev' 'wifi wifi';align-items:start}
-#cProfile{grid-area:prof}#cPower{grid-area:power}#cCal{grid-area:cal}#cSite{grid-area:site}#cDisp{grid-area:disp}#cWifi{grid-area:wifi}#cDev{grid-area:dev}}
+#tabSetup{grid-template-columns:1fr 1fr;grid-template-areas:'prof cal' 'site cal' 'site disp' 'power disp' 'rate dev' 'admin ota' 'wifi wifi';align-items:start}
+#cProfile{grid-area:prof}#cPower{grid-area:power}#cAdmin{grid-area:admin}#cRate{grid-area:rate}#cOta{grid-area:ota}#cCal{grid-area:cal}#cSite{grid-area:site}#cDisp{grid-area:disp}#cWifi{grid-area:wifi}#cDev{grid-area:dev}}
 .card{background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:18px}
 .card h2{font-size:15px;margin:0 0 14px;color:var(--muted);font-weight:600;letter-spacing:.02em}
 .hero{display:flex;gap:20px;align-items:stretch}
@@ -94,6 +94,15 @@ h3.sub{font-size:14px;margin:20px 0 6px;color:var(--text)}
 .calprev.bad{background:rgba(220,38,38,.12);color:var(--danger)}.calprev.warn{background:rgba(217,119,6,.12);color:var(--warn)}
 .ro{padding:11px 12px;border:1px dashed var(--line);border-radius:10px;font-size:16px}
 .help a,.card p a{color:var(--accent);font-weight:600}
+.hright{display:flex;align-items:center;gap:8px}
+.adminBtn{border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;border-radius:999px;padding:5px 12px;font-size:13px;font-weight:600;cursor:pointer}
+.adminBtn:hover{background:rgba(255,255,255,.15)}
+.h2row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.mini{font-size:12px;padding:4px 6px;border:1px solid var(--line);border-radius:8px;background:var(--input);color:var(--text)}
+.viewer .adminOnlyNote{display:block}.adminOnlyNote{display:none}
+.modal h2{margin-top:0}
+.otaBar{height:10px;border-radius:999px;background:var(--input);border:1px solid var(--line);overflow:hidden;margin-top:12px}
+.otaBar i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
 .litres{font-size:15px;color:var(--muted);margin:-2px 0 8px;font-weight:600}
 .gstats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}.gstats .stat b{font-size:20px}
 .seg[id=segUsage]{margin-bottom:0}
@@ -184,7 +193,8 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
 </div>
 <header>
   <h1><span id="hTitle">Water Tanks Monitor System</span><small id="hSub">woodyouloveit.com</small></h1>
-  <div class="chip" id="chip"><i></i><span id="chipText">Connecting…</span></div>
+  <div class="hright"><div class="chip" id="chip"><i></i><span id="chipText">Connecting…</span></div>
+    <button class="adminBtn" id="btnAdmin" onclick="adminClick()">Admin</button></div>
 </header>
 <nav class="tabs" id="tabs">
   <button data-tab="overview" class="on">Overview</button>
@@ -200,7 +210,9 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
   </div>
 
   <section class="card" id="cLevel">
-    <h2>WATER LEVEL</h2>
+    <h2 class="h2row"><span>WATER LEVEL</span>
+      <select id="unitSel" class="mini" title="Units on this device (browser)"><option value="">Units: default</option>
+        <option value="0">cm</option><option value="1">mm</option><option value="2">inch</option></select></h2>
     <div class="hero">
       <div class="tank"><div class="water" id="water"></div></div>
       <div class="leds" id="leds" title="LED strip preview"></div>
@@ -234,10 +246,10 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
       <span>Water depth when full</span><b id="gDepth">--</b>
       <span>Calibrated range</span><b id="gRange">--</b>
       <span>Sensor to full water line</span><b id="gGap">--</b>
-      <span>1 cm of water</span><b id="gRes">--</b>
+      <span id="gResL">1 cm of water</span><b id="gRes">--</b>
     </div>
     <div class="alert warn" id="gWarn"></div>
-    <p class="help" style="margin-top:12px"><a href="#setup">Change tank, usage and calibration in Setup</a></p>
+    <p class="help adminLink" style="margin-top:12px"><a href="#setup">Change tank, usage and calibration in Setup</a></p>
   </section>
 </main>
 
@@ -255,16 +267,16 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
     </div>
     <div class="field"><label for="inPreset">Tank size</label><select id="inPreset" class="sel"></select></div>
     <div class="row3" id="dimRect">
-      <div class="field"><label for="inLen">Length (mm)</label><input type="number" id="inLen" min="0" max="20000" inputmode="numeric"></div>
-      <div class="field"><label for="inWid">Width (mm)</label><input type="number" id="inWid" min="0" max="20000" inputmode="numeric"></div>
-      <div class="field"><label for="inHgt">Height (mm)</label><input type="number" id="inHgt" min="0" max="20000" inputmode="numeric"></div>
+      <div class="field"><label for="inLen">Length (<span class="uL">mm</span>)</label><input type="number" id="inLen" min="0" max="20000" inputmode="numeric"></div>
+      <div class="field"><label for="inWid">Width (<span class="uL">mm</span>)</label><input type="number" id="inWid" min="0" max="20000" inputmode="numeric"></div>
+      <div class="field"><label for="inHgt">Height (<span class="uL">mm</span>)</label><input type="number" id="inHgt" min="0" max="20000" inputmode="numeric"></div>
     </div>
     <div class="row2" id="dimCyl" hidden>
-      <div class="field"><label for="inDia">Diameter (mm)</label><input type="number" id="inDia" min="0" max="20000" inputmode="numeric"></div>
-      <div class="field"><label for="inHgtC">Height (mm)</label><input type="number" id="inHgtC" min="0" max="20000" inputmode="numeric"></div>
+      <div class="field"><label for="inDia">Diameter (<span class="uL">mm</span>)</label><input type="number" id="inDia" min="0" max="20000" inputmode="numeric"></div>
+      <div class="field"><label for="inHgtC">Height (<span class="uL">mm</span>)</label><input type="number" id="inHgtC" min="0" max="20000" inputmode="numeric"></div>
     </div>
     <div class="row2">
-      <div class="field"><label for="inDepth">Water depth when full (mm)</label><input type="number" id="inDepth" min="0" max="20000" inputmode="numeric">
+      <div class="field"><label for="inDepth">Water depth when full (<span class="uL">mm</span>)</label><input type="number" id="inDepth" min="0" max="20000" inputmode="numeric">
         <p class="help">Tank bottom to the overflow pipe: the highest the water gets.</p></div>
       <div class="field"><label for="inCapP">Capacity (litres)</label><input type="number" id="inCapP" min="0" max="1000000" inputmode="numeric">
         <p class="help" id="capHint"></p></div>
@@ -279,7 +291,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
 
   <section class="card" id="cCal">
     <h2>CALIBRATION</h2>
-    <div class="live"><span>Live sensor reading</span><b id="liveDist">-- cm</b></div>
+    <div class="live"><span>Live sensor reading <small class="help" id="liveMode"></small></span><b id="liveDist">-- cm</b></div>
 
     <h3 class="sub">1 · How full is the tank right now?</h3>
     <p class="help">Slide to the current water level. With the water depth from <a href="#cProfile">Usage &amp; tank</a>,
@@ -290,7 +302,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
 
     <h3 class="sub">2 · From measurements</h3>
     <div class="row2">
-      <div class="field"><label for="inGap">Sensor face to full water line (cm)</label><input type="number" id="inGap" step="0.5" min="15" max="400" inputmode="decimal"></div>
+      <div class="field"><label for="inGap">Sensor face to full water line (<span class="uL">cm</span>)</label><input type="number" id="inGap" step="0.5" min="15" max="400" inputmode="decimal"></div>
       <div class="field"><label>Water depth when full</label><div class="ro" id="depthShow">--</div></div>
     </div>
     <div class="calprev" id="prevMeas"></div>
@@ -302,8 +314,8 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
       <button class="btn sec" id="btnFull" onclick="calNow('full')">Tank is FULL now</button>
     </div>
     <div class="row2" style="margin-top:4px">
-      <div class="field"><label for="inEmpty">Empty distance (cm)</label><input type="number" id="inEmpty" step="0.5" min="20" max="450" inputmode="decimal"></div>
-      <div class="field"><label for="inFull">Full distance (cm)</label><input type="number" id="inFull" step="0.5" min="15" max="440" inputmode="decimal"></div>
+      <div class="field"><label for="inEmpty">Empty distance (<span class="uL">cm</span>)</label><input type="number" id="inEmpty" step="0.5" min="20" max="450" inputmode="decimal"></div>
+      <div class="field"><label for="inFull">Full distance (<span class="uL">cm</span>)</label><input type="number" id="inFull" step="0.5" min="15" max="440" inputmode="decimal"></div>
     </div>
     <button class="btn sec" onclick="calManual()">Save distances</button>
     <p class="help">Now: empty at <b id="calNowE">--</b>, full at <b id="calNowF">--</b> from the sensor.
@@ -332,6 +344,9 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
 
   <section class="card" id="cDisp">
     <h2>DISPLAY &amp; SENSOR SETTINGS</h2>
+    <div class="field"><label>Units for everyone (default)</label>
+      <div class="seg" id="segUnits" style="margin-bottom:4px"><button data-v="1">mm</button><button data-v="0">cm</button><button data-v="2">inch</button></div>
+      <p class="help">Used on the dashboard and in PDF reports. Each viewer can still pick other units in the Water level card.</p></div>
     <div class="field"><label for="inLeds">Number of LEDs on the strip</label><input type="number" id="inLeds" min="1" max="300" step="1" inputmode="numeric">
       <p class="help" id="ampHelp"></p></div>
     <div class="field"><label>LED brightness: <b id="brVal">--</b></label><input type="range" id="inBr" min="5" max="255" step="5"></div>
@@ -348,8 +363,8 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
 
   <section class="card" id="cPower">
     <h2>POWER &amp; RADIO</h2>
-    <div class="toggle" style="border-top:none"><span>Power saving (production mode)<br><span class="help">CPU at 80 MHz (ESP32), sensor read twice a second,
-      LED strip refreshed only when it changes, Wi-Fi power saving while the hotspot is off. Recommended for installed devices.</span></span>
+    <div class="toggle" style="border-top:none"><span>Power saving (production mode)<br><span class="help">CPU at 80 MHz (ESP32), LED strip refreshed only when it changes,
+      Wi-Fi power saving while the hotspot is off. Recommended for installed devices. How often the sensor is read is set in Update rate.</span></span>
       <label class="sw"><input type="checkbox" id="inEco"><i></i></label></div>
     <div class="field" style="margin-top:10px"><label for="inApMode">Hotspot</label>
       <select id="inApMode" class="sel"><option value="0">Automatic: on when home Wi-Fi is unavailable</option>
@@ -362,9 +377,69 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
       <span>Mode now</span><b id="pMode">--</b>
       <span>CPU</span><b id="pCpu">--</b>
       <span>Transmit power</span><b id="pTx">--</b>
-      <span>Sensor reads</span><b id="pRate">--</b>
+      <span>Update rate</span><b id="pRate">--</b>
     </div>
     <div style="margin-top:14px"><button class="btn" onclick="savePower()">Save power settings</button></div>
+  </section>
+
+  <section class="card" id="cRate">
+    <h2>UPDATE RATE</h2>
+    <p class="help" style="margin-top:0">How often the water level is measured, and how often an open dashboard refreshes. Slower means less
+      sensor and radio activity, lower power and a cooler board. A tank level changes slowly, so Eco is plenty for daily use.</p>
+    <div class="field" style="margin-top:10px"><label for="inRate">Profile</label>
+      <select id="inRate" class="sel">
+        <option value="0">Eco: sensor every 5 s, dashboard every 10 s (recommended)</option>
+        <option value="1">Balanced: sensor every 2 s, dashboard every 5 s</option>
+        <option value="2">Responsive: sensor every 0.5 s, dashboard every 2 s</option>
+        <option value="3">Custom</option></select></div>
+    <div class="row2" id="rateCustom" hidden>
+      <div class="field"><label for="inSensS">Sensor reading every (seconds)</label><input type="number" id="inSensS" min="0.2" max="30" step="0.1" inputmode="decimal"></div>
+      <div class="field"><label for="inRefS">Dashboard refresh every (seconds)</label><input type="number" id="inRefS" min="2" max="60" step="1" inputmode="numeric"></div>
+    </div>
+    <div class="kv" style="margin-top:0">
+      <span>Sensor readings</span><b id="rPerH">--</b>
+      <span>Level follows a change within</span><b id="rReact">--</b>
+      <span>"No echo" shown after</span><b id="rFault">--</b>
+      <span>Open dashboard refreshes</span><b id="rRefresh">--</b>
+    </div>
+    <p class="help">Not affected: history (every 2 min), fill detection (every 10 s) and the night leak check.
+      While an admin has this Setup tab open, the device reads every 0.5 s so calibration stays live, then returns to this rate.</p>
+    <div style="margin-top:12px"><button class="btn" onclick="saveRate()">Save update rate</button></div>
+  </section>
+
+  <section class="card" id="cOta">
+    <h2>FIRMWARE UPDATE</h2>
+    <div class="kv" style="margin-top:0">
+      <span>Installed</span><b id="otaCur">--</b>
+      <span>Board</span><b id="otaBoard">--</b>
+      <span>Space for an update</span><b id="otaMax">--</b>
+    </div>
+    <p class="help">In Arduino IDE use <b>Sketch → Export Compiled Binary</b>, then pick <b>water_level_indicator.ino.bin</b> from the sketch's
+      <b>build</b> folder (not the .bootloader, .partitions or .merged file). Settings, Wi-Fi, calibration, history and logs are kept.</p>
+    <input type="file" id="fileOta" accept=".bin,application/octet-stream" hidden onchange="otaPick(this)">
+    <div style="margin-top:12px"><button class="btn" id="btnOta" onclick="$('fileOta').click()">Choose firmware file…</button></div>
+    <div class="otaBar" id="otaBar" hidden><i id="otaFill"></i></div>
+    <p class="help" id="otaMsg"></p>
+  </section>
+
+  <section class="card" id="cAdmin">
+    <h2>ADMIN &amp; BACKUP</h2>
+    <p class="help" style="margin-top:0">Without logging in, people see the Overview and Analytics tabs only. They can't change settings,
+      clear history, or restart the device.</p>
+    <div class="btns" style="margin-top:12px">
+      <button class="btn sec" onclick="openPwModal(false)">Change password</button>
+      <button class="btn sec" onclick="adminLogout()">Log out</button>
+    </div>
+    <h3 class="sub">Settings backup</h3>
+    <p class="help">Saves site, tank, calibration, units, alarms, analytics, display and power settings to a file, to restore later or
+      on another device, and to attach to reports. Wi-Fi passwords and the admin password are never included.</p>
+    <div class="kv" style="margin:8px 0 0"><span>Settings ID now</span><b id="setId">--</b></div>
+    <div class="btns" style="margin-top:12px">
+      <button class="btn" onclick="exportSettings()">Export settings</button>
+      <button class="btn sec" onclick="$('fileImport').click()">Import settings</button>
+    </div>
+    <input type="file" id="fileImport" accept=".json,application/json" hidden onchange="importSettings(this)">
+    <p class="help">The Settings ID also appears in PDF reports, so a report can be matched to the exported settings file.</p>
   </section>
 
   <section class="card" id="cWifi">
@@ -450,19 +525,20 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
     <div id="nightTable"></div>
     <p class="help" id="nightHelp"></p>
   </section>
-  <section class="card" id="aSet">
+  <section class="card adminOnly" id="aSet">
     <h2>ANALYTICS SETTINGS</h2>
+    <div class="alert info adminOnlyNote" id="aSetNote" style="margin:0 0 14px">View only. <a href="#" onclick="openLogin();return false">Log in as admin</a> to change analytics settings or clear the history.</div>
     <div class="row2">
       <div class="field"><label for="inCap">Tank capacity (litres)</label><input type="number" id="inCap" min="0" max="1000000" step="50" inputmode="numeric" placeholder="e.g. 1000">
         <p class="help">Optional. Shows amounts in litres (assumes straight tank walls). 0 = show %.</p></div>
-      <div class="field"><label for="inFillCm">Fill detection: minimum rise (cm/min)</label><input type="number" id="inFillCm" min="0.1" max="20" step="0.1" inputmode="decimal">
-        <p class="help">Lower it if slow fills are missed, raise it if you see false fills. Default 0.5.</p></div>
+      <div class="field"><label for="inFillCm">Fill detection: minimum rise (<span class="uL">cm</span>/min)</label><input type="number" id="inFillCm" min="0.1" max="20" step="0.1" inputmode="decimal">
+        <p class="help">Lower it if slow fills are missed, raise it if you see false fills. Default 0.5 cm/min.</p></div>
     </div>
     <div class="row2">
       <div class="field"><label for="inNs">Night check from</label><select class="inp" id="inNs"></select></div>
       <div class="field"><label for="inNe">to</label><select class="inp" id="inNe"></select></div>
     </div>
-    <div class="field"><label for="inLeak">Possible leak if the level drops more than (cm) during the night window</label><input type="number" id="inLeak" min="0.2" max="50" step="0.1" inputmode="decimal">
+    <div class="field"><label for="inLeak">Possible leak if the level drops more than (<span class="uL">cm</span>) during the night window</label><input type="number" id="inLeak" min="0.2" max="50" step="0.1" inputmode="decimal">
       <p class="help">Pick a quiet time when nobody uses water. Default 01:00–05:00 and 1.5 cm.</p></div>
     <div class="btns">
       <button class="btn" onclick="saveAnalytics()">Save analytics settings</button>
@@ -499,6 +575,19 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
     <a href="https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard" target="_blank" rel="noopener">Source code</a></div>
 </footer>
 <div class="toast" id="toast"></div>
+<div class="modal" id="loginModal"><div class="card"><h2>ADMIN LOGIN</h2>
+  <div class="field"><label for="inPw">Password</label><input type="password" id="inPw" autocomplete="current-password"></div>
+  <p class="help" id="loginErr" style="color:var(--danger)"></p>
+  <div class="btns" style="margin:0"><button class="btn sec" onclick="closeLogin()">Cancel</button><button class="btn" id="btnLogin" onclick="doLogin()">Log in</button></div>
+  <p class="help" style="margin-top:12px">Forgot it? Hold the <b>BOOT</b> button on the board for 10 seconds (the strip flashes red) to reset the password to <b>admin</b>.</p>
+</div></div>
+<div class="modal" id="pwModal"><div class="card"><h2>CHANGE ADMIN PASSWORD</h2>
+  <p class="help" id="pwNote"></p>
+  <div class="field"><label for="inPw1">New password</label><input type="password" id="inPw1" autocomplete="new-password"></div>
+  <div class="field"><label for="inPw2">Repeat new password</label><input type="password" id="inPw2" autocomplete="new-password"></div>
+  <p class="help" id="pwErr" style="color:var(--danger)"></p>
+  <div class="btns" style="margin:0"><button class="btn sec" id="btnPwCancel" onclick="closePwModal()">Cancel</button><button class="btn" onclick="savePw()">Save password</button></div>
+</div></div>
 <div class="modal" id="modal"><div class="card"><p id="modalMsg"></p>
   <div class="btns" style="margin:0"><button class="btn sec" id="modalNo">Cancel</button><button class="btn" id="modalYes">OK</button></div></div></div>
 
@@ -526,9 +615,10 @@ function esc(s){const d=document.createElement('div');d.textContent=s;return d.i
 function render(){
   const s=st,w=s.wifi,lvl=s.valid?s.level:0;
   $('pct').textContent=s.valid?Math.round(s.level):'--';
-  $('dist').textContent=s.valid?s.distance.toFixed(1)+' cm':'no echo';
-  $('liveDist').textContent=s.valid?s.distance.toFixed(1)+' cm':'no echo';
-  $('kvEmpty').textContent=s.empty.toFixed(1)+' cm';$('kvFull').textContent=s.full.toFixed(1)+' cm';
+  $('dist').textContent=s.valid?fmtL(s.distance):'no echo';
+  $('liveDist').textContent=s.valid?fmtL(s.distance):'no echo';
+  if($('liveMode'))$('liveMode').textContent=s.rate&&s.rate.live?'· live, every 0.5 s':'';
+  $('kvEmpty').textContent=fmtL(s.empty);$('kvFull').textContent=fmtL(s.full);
   const wt=$('water');wt.style.height=(s.valid?lvl:0)+'%';wt.style.backgroundColor=ledColor(lvl/100);
   buildLeds(s.leds);
   const lit=lvl/100*N,leds=$('leds').children;
@@ -544,8 +634,10 @@ function render(){
   const conn=w.state==='connected';
   $('setupBanner').classList.toggle('show',!w.saved&&w.state!=='connecting'&&!conn);
   renderSite();if(!siteLoaded)fillSite();
+  applyUnitLabels();applyRole();
   renderGlance();renderPower();if(!profLoaded)fillProfile();else if(tab==='setup')calPreview();
-  $('banners').hidden=!document.querySelector('#banners .banner.show');
+  if(isAdmin()){$('setId').textContent=settingsId();renderOta();fillRate();}
+  $('banners').hidden=!isAdmin()||!document.querySelector('#banners .banner.show');   // setup banners are for admins
   $('wSaved').textContent=w.saved||'Not set';
   $('wState').textContent={connected:'Connected',connecting:'Connecting…',failed:'Not reachable',none:'Not set up'}[w.state];
   $('rssiTxt').textContent=conn?w.rssi+' dBm':'--';
@@ -567,7 +659,7 @@ function render(){
   $('logStore').textContent=s.logStore==='flash'?'Flash (kept after restart)':'Memory only (lost on restart)';
   $('host').textContent=conn?`${w.host}.local · ${w.ip}`:`hotspot · ${w.apIp}`;
   const fa=$('alertFill');
-  if(s.filling)setAlert(fa,'info',`Filling (motor on) · rising ${s.fillRate.toFixed(1)} cm/min`+(s.fillEta>=0?` · full in about ${dur(s.fillEta)}`:''));
+  if(s.filling)setAlert(fa,'info',`Filling (motor on) · rising ${fmtRate(s.fillRate)}`+(s.fillEta>=0?` · full in about ${dur(s.fillEta)}`:''));
   else setAlert(fa,'','');
   if(!formLoaded)fillForm();
 }
@@ -584,51 +676,50 @@ function presetLabel(i){const p=PRESETS[i];return `Loft tank ${p.cap} L · ${p.l
 function buildPresets(){const sel=$('inPreset'),shape=+$('inShape').value,cur=sel.value;
   sel.innerHTML='<option value="0">Custom size</option>'+(shape===0?PRESETS.slice(1).map((p,i)=>`<option value="${i+1}">${presetLabel(i+1)}</option>`).join(''):'');
   sel.value=[...sel.options].some(o=>o.value===cur)?cur:'0';}
-function tankHeight(){return +$('inShape').value?iv('inHgtC'):iv('inHgt');}
-function capEstimate(){const d=iv('inDepth');if(!d)return 0;
-  return +$('inShape').value?Math.PI*Math.pow(iv('inDia')/2,2)*d/1e6*0.95:iv('inLen')*iv('inWid')*d/1e6*0.85;}
+function tankHeight(){return +$('inShape').value?mmIn('inHgtC'):mmIn('inHgt');}
+function capEstimate(){const d=mmIn('inDepth');if(!d)return 0;
+  return +$('inShape').value?Math.PI*Math.pow(mmIn('inDia')/2,2)*d/1e6*0.95:mmIn('inLen')*mmIn('inWid')*d/1e6*0.85;}
 function profileUI(){
   const shape=+$('inShape').value,loc=+$('inLoc').value;
   $('dimRect').hidden=shape!==0;$('dimCyl').hidden=shape!==1;
   $('inPreset').disabled=shape!==0;
   const est=capEstimate();
   $('capHint').textContent=est?`Estimated from the size: about ${Math.round(est)} L. Enter the rated capacity if you know it.`:'Rated capacity from the tank label or catalogue.';
-  const tips={1:'Loft tanks are shallow. The sensor cannot measure closer than 20–25 cm, so mount it on a stand pipe (at least 25 cm tall and 75 mm wide) over the manhole, not flat on the lid.',
+  const tips={1:`Loft tanks are shallow. The sensor cannot measure closer than ${fmtL(20,0)}–${fmtL(25,0)}, so mount it on a stand pipe (at least ${fmtL(25,0)} tall and ${fmtL(7.5,ul()==='in'?1:undefined)} wide) over the manhole, not flat on the lid.`,
     2:'Underground sump: keep the probe away from the inlet pipe and walls. The low water alarm helps protect the pump from running dry.',
-    0:'Overhead tank: mount the probe at the centre of the lid or manhole, pointing straight down, at least 25 cm above the full water line.'};
+    0:`Overhead tank: mount the probe at the centre of the lid or manhole, pointing straight down, at least ${fmtL(25,0)} above the full water line.`};
   setAlert($('profTip'),tips[loc]?'info':'',tips[loc]||'');
   const r=recommended();
   $('recHelp').textContent=`Recommended for ${USAGE[usageSel].toLowerCase()} use, ${LOCS[loc].toLowerCase()}: night leak check ${hh(r.nightStart)}–${hh(r.nightEnd)}, `+
-    `low water alarm ${r.lowAlarm}%, leak limit ${r.leakCm} cm.`;
-  $('depthShow').textContent=iv('inDepth')?iv('inDepth')+' mm':'Set it in Usage & tank';
+    `low water alarm ${r.lowAlarm}%, leak limit ${fmtL(r.leakCm)}.`;
+  $('depthShow').textContent=mmIn('inDepth')?fmtMmL(mmIn('inDepth')):'Set it in Usage & tank';
   calPreview();
 }
-function recommended(){const loc=+$('inLoc').value,depth=iv('inDepth')||spanMm();
+function recommended(){const loc=+$('inLoc').value,depth=mmIn('inDepth')||spanMm();
   return {nightStart:usageSel?22:1,nightEnd:usageSel?6:5,lowAlarm:loc===2?30:usageSel?25:15,
     leakCm:Math.max(1,Math.round(depth*0.02/5)*0.5)};}
 function fillProfile(){if(profLoaded||!st.profile)return;profLoaded=true;const p=st.profile;
   usageSel=p.usage;[...$('segUsage').children].forEach(b=>b.classList.toggle('on',+b.dataset.v===usageSel));
   $('inLoc').value=p.location;$('inShape').value=p.shape;buildPresets();$('inPreset').value=String(p.preset);
   if(!$('inPreset').value)$('inPreset').value='0';
-  const z=v=>v?v:'';
-  $('inLen').value=z(p.len);$('inWid').value=z(p.wid);$('inHgt').value=z(p.hgt);$('inDia').value=z(p.dia);$('inHgtC').value=z(p.hgt);
-  $('inDepth').value=z(p.depth);$('inCapP').value=z(st.capacity);
-  $('inGap').value=st.full.toFixed(1);$('inNow').value=Math.round(st.valid?st.level:50);$('nowVal').textContent=$('inNow').value+'%';
+  setMm('inLen',p.len);setMm('inWid',p.wid);setMm('inHgt',p.hgt);setMm('inDia',p.dia);setMm('inHgtC',p.hgt);
+  setMm('inDepth',p.depth);$('inCapP').value=st.capacity||'';
+  setCm('inGap',st.full);$('inNow').value=Math.round(st.valid?st.level:50);$('nowVal').textContent=$('inNow').value+'%';
   profileUI();}
 [...$('segUsage').children].forEach(b=>b.onclick=()=>{usageSel=+b.dataset.v;
   [...$('segUsage').children].forEach(x=>x.classList.toggle('on',x===b));profileUI();});
 $('inShape').onchange=()=>{buildPresets();profileUI();};
 $('inLoc').onchange=()=>{if(+$('inLoc').value===1&&+$('inShape').value!==0){$('inShape').value='0';buildPresets();}profileUI();};
 $('inPreset').onchange=()=>{const p=PRESETS[+$('inPreset').value];
-  if(p){$('inLen').value=p.l;$('inWid').value=p.w;$('inHgt').value=p.h;$('inCapP').value=p.cap;$('inDepth').value=p.h-40;}profileUI();};
+  if(p){setMm('inLen',p.l);setMm('inWid',p.w);setMm('inHgt',p.h);$('inCapP').value=p.cap;setMm('inDepth',p.h-40);}profileUI();};
 ['inLen','inWid','inHgt','inDia','inHgtC','inDepth'].forEach(id=>$(id).addEventListener('input',()=>{
   if(['inLen','inWid','inHgt'].includes(id))$('inPreset').value='0';profileUI();}));
 async function saveProfile(){
-  const shape=+$('inShape').value,h=tankHeight(),d=iv('inDepth');
+  const shape=+$('inShape').value,h=tankHeight(),d=mmIn('inDepth');
   if(d&&h&&d>h){toast('Water depth cannot be more than the tank height',true);return;}
   const cap=Math.round(iv('inCapP')||capEstimate());
   const j=await post('/api/profile',{usage:usageSel,location:$('inLoc').value,shape,preset:shape?0:$('inPreset').value,
-    len:iv('inLen'),wid:iv('inWid'),hgt:h,dia:iv('inDia'),depth:d});
+    len:mmIn('inLen'),wid:mmIn('inWid'),hgt:h,dia:mmIn('inDia'),depth:d});
   if(!j.ok)return;
   if(cap!==st.capacity)await post('/api/settings',{capacity:cap});
   $('inCapP').value=cap||'';profLoaded=false;formLoaded=false;await poll();
@@ -643,30 +734,30 @@ async function applyRecommended(){const r=recommended();
 // ---- Calibration from the slider or from measurements ----
 // E = sensor->water when empty, F = sensor->water when full (cm); depth D = E - F
 function calCheck(E,F){
-  if(F<15)return ['bad',`The full water line would be only ${F.toFixed(1)} cm below the sensor. It can't measure closer than about 20 cm: raise the sensor on a stand pipe.`];
-  if(F<22)return ['warn',`The full water line is ${F.toFixed(1)} cm below the sensor, at the edge of its blind zone. Readings near full may jump. 25 cm or more is safer.`];
-  if(E>450)return ['bad','The empty point would be more than 450 cm away, beyond the sensor range.'];
+  if(F<15)return ['bad',`The full water line would be only ${fmtL(F)} below the sensor. It can't measure closer than about ${fmtL(20,0)}: raise the sensor on a stand pipe.`];
+  if(F<22)return ['warn',`The full water line is ${fmtL(F)} below the sensor, at the edge of its blind zone. Readings near full may jump. ${fmtL(25,0)} or more is safer.`];
+  if(E>450)return ['bad',`The empty point would be more than ${fmtL(450,0)} away, beyond the sensor range.`];
   return ['',''];}
 function calText(E,F){const D=E-F,l=st.capacity>0?st.capacity/(D*10):0;
-  return `Empty at <b>${E.toFixed(1)} cm</b> · full at <b>${F.toFixed(1)} cm</b> from the sensor · water depth ${(D*10).toFixed(0)} mm`+
-    (l?` · 1 cm ≈ ${(l*10).toFixed(1)} L`:'');}
+  return `Empty at <b>${fmtL(E)}</b> · full at <b>${fmtL(F)}</b> from the sensor · water depth ${fmtMmL(D*10)}`+
+    (l?` · 1 ${ul()} ≈ ${(l*10/UN().f).toFixed(ul()==='mm'?2:1)} L`:'');}
 function calPreview(){
-  const D=iv('inDepth')/10,p=+$('inNow').value/100,box=$('prevSlider'),box2=$('prevMeas');
+  const D=mmIn('inDepth')/10,p=+$('inNow').value/100,box=$('prevSlider'),box2=$('prevMeas');
   $('nowVal').textContent=$('inNow').value+'%'+(st&&st.capacity?` · ${Math.round(st.capacity*p)} L`:'');
   if(!D){box.className='calprev warn';box.textContent='Enter the water depth when full in Usage & tank first.';$('btnSlider').disabled=true;}
   else if(!st||!st.valid){box.className='calprev warn';box.textContent='Waiting for a valid sensor reading.';$('btnSlider').disabled=true;}
   else{const E=st.distance+p*D,F=E-D,[c,m]=calCheck(E,F);box.className='calprev '+c;box.innerHTML=calText(E,F)+(m?'<br>'+m:'');$('btnSlider').disabled=c==='bad';}
-  const G=iv('inGap');
+  const G=cmIn('inGap');
   if(!D||!G){box2.className='calprev';box2.textContent='Measure from the sensor face down to the overflow (full) line.';$('btnMeas').disabled=true;}
   else{const E=G+D,[c,m]=calCheck(E,G);box2.className='calprev '+c;box2.innerHTML=calText(E,G)+(m?'<br>'+m:'');$('btnMeas').disabled=c==='bad';}
 }
 $('inNow').oninput=calPreview;$('inGap').oninput=calPreview;
 async function saveCal(E,F,how){
-  if(!await ask(`Save calibration ${how}? Empty at ${E.toFixed(1)} cm, full at ${F.toFixed(1)} cm from the sensor.`))return;
+  if(!await ask(`Save calibration ${how}? Empty at ${fmtL(E)}, full at ${fmtL(F)} from the sensor.`))return;
   const j=await post('/api/calibrate',{empty:E.toFixed(1),full:F.toFixed(1)});
   if(j.ok){await post('/api/profile',{gap:Math.round(F*10),depth:Math.round((E-F)*10)});formLoaded=false;profLoaded=false;poll();}}
-function calSlider(){const D=iv('inDepth')/10,p=+$('inNow').value/100,E=st.distance+p*D;saveCal(E,E-D,`with the tank ${$('inNow').value}% full`);}
-function calMeasured(){const D=iv('inDepth')/10,G=iv('inGap');saveCal(G+D,G,'from measurements');}
+function calSlider(){const D=mmIn('inDepth')/10,p=+$('inNow').value/100,E=st.distance+p*D;saveCal(E,E-D,`with the tank ${$('inNow').value}% full`);}
+function calMeasured(){const D=mmIn('inDepth')/10,G=cmIn('inGap');saveCal(G+D,G,'from measurements');}
 
 // ---- Overview: litres and tank at a glance ----
 function renderGlance(){
@@ -678,17 +769,218 @@ function renderGlance(){
   $('gCap').textContent=cap?L(cap):'not set';
   $('gSite').textContent=siteLine()||'not named';
   $('gUsage').textContent=`${USAGE[p.usage||0]}, ${(LOCS[p.location||0]||'').toLowerCase()}`;
-  const dims=p.shape?(p.dia?`cylinder Ø ${p.dia} × ${p.hgt} mm`:'vertical cylinder'):(p.len?`${p.len} × ${p.wid} × ${p.hgt} mm`:'rectangular');
+  const n=mm=>fmtMmL(mm).replace(' '+ul(),'');
+  const dims=p.shape?(p.dia?`cylinder Ø ${n(p.dia)} × ${fmtMmL(p.hgt)}`:'vertical cylinder'):(p.len?`${n(p.len)} × ${n(p.wid)} × ${fmtMmL(p.hgt)}`:'rectangular');
   $('gTank').textContent=(p.preset&&PRESETS[p.preset]?`Loft ${PRESETS[p.preset].cap} L, `:'')+dims;
-  $('gDepth').textContent=p.depth?p.depth+' mm':'not set';
-  $('gRange').textContent=`${s.full.toFixed(1)} → ${s.empty.toFixed(1)} cm (${depth.toFixed(0)} mm)`;
-  $('gGap').textContent=s.full.toFixed(1)+' cm';
-  $('gRes').textContent=cap?`≈ ${(cap/depth*10).toFixed(1)} L (${(1000/depth).toFixed(1)}%)`:`${(1000/depth).toFixed(1)}% of the tank`;
+  $('gDepth').textContent=p.depth?fmtMmL(p.depth):'not set';
+  $('gRange').textContent=`${fmtL(s.full)} → ${fmtL(s.empty)} (${fmtMmL(depth)})`;
+  $('gGap').textContent=fmtL(s.full);
+  $('gResL').textContent=`1 ${ul()} of water`;$('gRes').textContent=perUnitText(cap,depth);
   const warn=[];
   if(!p.depth&&Math.abs(s.empty-120)<0.05&&Math.abs(s.full-25)<0.05)warn.push('Not calibrated yet: the level uses default distances. Go to Setup → Calibration.');
-  if(s.full<20)warn.push(`The full water line is ${s.full.toFixed(1)} cm from the sensor, inside its blind zone. Raise the sensor on a stand pipe.`);
+  if(s.full<20)warn.push(`The full water line is ${fmtL(s.full)} from the sensor, inside its blind zone. Raise the sensor on a stand pipe.`);
   if(p.depth&&Math.abs(p.depth-depth)>15)warn.push(`Calibration (${depth.toFixed(0)} mm) doesn't match the tank's water depth (${p.depth} mm). Re-calibrate in Setup.`);
   setAlert($('gWarn'),warn.length?'warn':'',warn.join('<br>'));
+}
+
+// SHA-256 (hex) of a text, UTF-8 encoded. Used for the admin login challenge (crypto.subtle needs HTTPS).
+function sha256(txt){
+  const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,
+    0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,
+    0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,
+    0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+  const b=Array.from(new TextEncoder().encode(txt)),l=b.length*8;b.push(0x80);while(b.length%64!==56)b.push(0);
+  for(let i=7;i>=0;i--)b.push(i>3?0:(l>>>(i*8))&255);
+  const H=[0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19],w=new Array(64),r=(x,n)=>(x>>>n)|(x<<(32-n));
+  for(let o=0;o<b.length;o+=64){
+    for(let i=0;i<16;i++)w[i]=(b[o+i*4]<<24)|(b[o+i*4+1]<<16)|(b[o+i*4+2]<<8)|b[o+i*4+3];
+    for(let i=16;i<64;i++){const s0=r(w[i-15],7)^r(w[i-15],18)^(w[i-15]>>>3),s1=r(w[i-2],17)^r(w[i-2],19)^(w[i-2]>>>10);w[i]=(w[i-16]+s0+w[i-7]+s1)|0;}
+    let [a,c,d,e,f,g,h,k]=H;
+    for(let i=0;i<64;i++){const t1=(k+(r(f,6)^r(f,11)^r(f,25))+((f&g)^(~f&h))+K[i]+w[i])|0,t2=((r(a,2)^r(a,13)^r(a,22))+((a&c)^(a&d)^(c&d)))|0;
+      k=h;h=g;g=f;f=(e+t1)|0;e=d;d=c;c=a;a=(t1+t2)|0;}
+    H[0]=(H[0]+a)|0;H[1]=(H[1]+c)|0;H[2]=(H[2]+d)|0;H[3]=(H[3]+e)|0;H[4]=(H[4]+f)|0;H[5]=(H[5]+g)|0;H[6]=(H[6]+h)|0;H[7]=(H[7]+k)|0;}
+  return H.map(x=>(x>>>0).toString(16).padStart(8,'0')).join('');
+}
+
+// ---- Units: everything is stored in cm (distances) or mm (tank sizes) and converted for display ----
+const UNITS=[{k:'cm',f:1},{k:'mm',f:10},{k:'in',f:1/2.54}];
+let unitLocal=null;try{const v=localStorage.getItem('wtmsUnit');if(v!==null&&UNITS[+v])unitLocal=+v;}catch(e){}
+const uIdx=()=>unitLocal!==null?unitLocal:(st&&UNITS[st.units]?st.units:0);
+const UN=()=>UNITS[uIdx()],ul=()=>UN().k;
+function udp(v){const k=ul();return k==='mm'?0:(k==='in'&&Math.abs(v)<10?2:1);}
+function fmtL(cm,dp){const v=cm*UN().f;return v.toFixed(dp??udp(v))+' '+ul();}
+const fmtMmL=(mm,dp)=>fmtL(mm/10,dp);
+function fmtRate(cmMin){const v=cmMin*UN().f;return v.toFixed(ul()==='in'?2:ul()==='mm'?0:1)+' '+ul()+'/min';}
+function setCm(id,cm){const v=cm*UN().f;$(id).value=cm||cm===0?+v.toFixed(ul()==='mm'?0:ul()==='in'?2:1):'';}
+const setMm=(id,mm)=>{if(mm)setCm(id,mm/10);else $(id).value='';};
+const cmIn=id=>iv(id)/UN().f, mmIn=id=>Math.round(iv(id)/UN().f*10);
+function perUnitText(cap,depthMm){const cmPerU=1/UN().f,frac=cmPerU*10/depthMm;
+  return (cap?`≈ ${(cap*frac).toFixed(ul()==='mm'?2:1)} L (`:'')+`${(frac*100).toFixed(ul()==='mm'?2:1)}%`+(cap?')':' of the tank');}
+let lastUnit=-1;
+function applyUnitLabels(){if(uIdx()===lastUnit)return;lastUnit=uIdx();
+  document.querySelectorAll('.uL').forEach(e=>e.textContent=ul());
+  ['inLen','inWid','inHgt','inDia','inHgtC','inDepth','inGap','inEmpty','inFull','inLeak','inFillCm'].forEach(id=>{const e=$(id);
+    e.step='any';e.removeAttribute('min');e.removeAttribute('max');});
+  $('unitSel').value=unitLocal===null?'':String(unitLocal);
+  formLoaded=false;profLoaded=false;}
+$('unitSel').onchange=e=>{const v=e.target.value;unitLocal=v===''?null:+v;
+  try{v===''?localStorage.removeItem('wtmsUnit'):localStorage.setItem('wtmsUnit',v);}catch(x){}
+  applyUnitLabels();if(st){render();if(aLoaded)renderAnalytics();}};
+let unitDef=0;
+[...$('segUnits').children].forEach(b=>b.onclick=()=>{unitDef=+b.dataset.v;[...$('segUnits').children].forEach(x=>x.classList.toggle('on',x===b));});
+
+// ---- Admin / viewer ----
+let token='';try{token=localStorage.getItem('wtmsAuth')||'';}catch(e){}
+function setToken(t){token=t||'';try{t?localStorage.setItem('wtmsAuth',t):localStorage.removeItem('wtmsAuth');}catch(e){}}
+const isAdmin=()=>!!(st&&st.auth&&st.auth.admin);
+let pwForced=false;
+function applyRole(){
+  const a=isAdmin();document.body.classList.toggle('viewer',!a);
+  $('btnAdmin').textContent=a?'Log out':'Admin';$('btnAdmin').title=a?'Log out of admin':'Admin login';
+  document.querySelectorAll('#tabs [data-tab=setup],#tabs [data-tab=log]').forEach(b=>b.hidden=!a);
+  document.querySelectorAll('#aSet input,#aSet select,#aSet button').forEach(e=>e.disabled=!a);
+  document.querySelectorAll('.adminLink').forEach(e=>e.hidden=!a);
+  if(!a&&(tab==='setup'||tab==='log'))showTab('overview');
+  if(!a)$('banners').hidden=true;
+  if(a&&st.auth.mustChange&&!$('pwModal').classList.contains('show'))openPwModal(true);
+}
+function openLogin(){$('loginErr').textContent='';$('inPw').value='';$('loginModal').classList.add('show');setTimeout(()=>$('inPw').focus(),50);}
+function closeLogin(){$('loginModal').classList.remove('show');}
+$('inPw').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+async function doLogin(){
+  const pw=$('inPw').value;if(!pw)return;
+  $('btnLogin').disabled=true;$('loginErr').textContent='';
+  try{
+    const a=await (await fetch('/api/auth',{cache:'no-store'})).json();
+    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:new URLSearchParams({proof:sha256(a.nonce+sha256(a.salt+pw))})});
+    const j=await r.json();
+    if(!j.ok)$('loginErr').textContent=j.message;
+    else{setToken(j.token);closeLogin();toast('Logged in as admin');await poll();}
+  }catch(e){$('loginErr').textContent='Could not reach the device';}
+  $('btnLogin').disabled=false;
+}
+async function adminLogout(){await post('/api/logout');setToken('');toast('Logged out');await poll();}
+function adminClick(){isAdmin()?adminLogout():openLogin();}
+function openPwModal(forced){pwForced=forced;$('pwErr').textContent='';$('inPw1').value='';$('inPw2').value='';
+  $('pwNote').textContent=forced?'You are using the default password. Choose your own admin password to continue.':'Enter a new admin password.';
+  $('btnPwCancel').textContent=forced?'Log out':'Cancel';$('pwModal').classList.add('show');setTimeout(()=>$('inPw1').focus(),50);}
+function closePwModal(){$('pwModal').classList.remove('show');if(pwForced)adminLogout();}
+async function savePw(){
+  const a=$('inPw1').value,b=$('inPw2').value;
+  if(a.length<6){$('pwErr').textContent='Use at least 6 characters.';return;}
+  if(a!==b){$('pwErr').textContent='The two passwords do not match.';return;}
+  if(a==='admin'){$('pwErr').textContent='Choose a password other than "admin".';return;}
+  try{const s=await (await fetch('/api/auth',{cache:'no-store'})).json();
+    const j=await post('/api/password',{hash:sha256(s.salt+a)});
+    if(j.ok){pwForced=false;$('pwModal').classList.remove('show');poll();}}
+  catch(e){$('pwErr').textContent='Could not reach the device';}
+}
+
+
+// ---- Settings backup (export / import) and Settings ID ----
+function settingsObj(){const s=st,p=s.profile||{};return {
+  site:{org:s.site.org,building:s.site.building,tank:s.site.tank},
+  profile:{usage:p.usage,location:p.location,shape:p.shape,preset:p.preset,lengthMm:p.len,widthMm:p.wid,heightMm:p.hgt,diameterMm:p.dia,waterDepthMm:p.depth},
+  calibration:{emptyCm:+s.empty.toFixed(1),fullCm:+s.full.toFixed(1)},
+  tank:{capacityL:s.capacity},
+  alarms:{lowAlarmPct:s.lowAlarm},
+  analytics:{nightStart:s.nightStart,nightEnd:s.nightEnd,leakCm:s.leakCm,fillCmPerMin:s.fillCm},
+  display:{units:['cm','mm','inch'][s.units],leds:s.leds,brightness:s.brightness,reversed:s.reversed,colorByLevel:s.colorByLevel},
+  sensor:{triggerUs:s.trigUs},
+  power:{powerSaving:s.perfMode===0,txPower:['medium','high','low'][s.txLevel],hotspot:['automatic','always','on-demand'][s.apMode]},
+  updateRate:{profile:['eco','balanced','responsive','custom'][s.rate.profile],sensorSeconds:s.rate.customSensorMs/1000,dashboardSeconds:s.rate.customRefreshS}};}
+// Short fingerprint of the settings (not of the export time), shown in reports and exported files
+function settingsId(){return sha256(JSON.stringify(settingsObj())).slice(0,8).toUpperCase();}
+function exportSettings(){
+  const n=new Date(),o={format:'wtms-settings',version:1,settingsId:settingsId(),exported:n.toISOString(),
+    firmware:st.fw,board:st.board,device:st.wifi.host,note:'Wi-Fi and admin passwords are not included.',
+    homeWifi:st.wifi.saved||'',...settingsObj()};
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(o,null,2)+'\n'],{type:'application/json'}));
+  a.download=`wtms-settings-${fileTag()}${n.getFullYear()}${pad(n.getMonth()+1)}${pad(n.getDate())}.json`;
+  document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);
+  toast(`Settings exported (ID ${o.settingsId})`);}
+async function importSettings(input){
+  const f=input.files[0];input.value='';if(!f)return;
+  let o;try{o=JSON.parse(await f.text());}catch(e){toast('Not a valid settings file',true);return;}
+  if(o.format!=='wtms-settings'){toast('Not a Water Tanks Monitor System settings file',true);return;}
+  const site=[o.site&&o.site.org,o.site&&o.site.building,o.site&&o.site.tank].filter(Boolean).join(' / ')||'no site names';
+  if(!await ask(`Import settings ${o.settingsId||''} from ${f.name}? Site: ${site}. Exported ${o.exported?new Date(o.exported).toLocaleString():''} `+
+    `from firmware ${o.firmware||'?'}. This replaces site, tank, calibration, alarms, analytics, display and power settings. Wi-Fi is not changed.`))return;
+  const U={cm:0,mm:1,inch:2},TX={medium:0,high:1,low:2},AP={automatic:0,always:1,'on-demand':2},steps=[];
+  if(o.site)steps.push(['/api/site',{org:o.site.org||'',building:o.site.building||'',tank:o.site.tank||''}]);
+  if(o.profile){const q=o.profile;steps.push(['/api/profile',{usage:q.usage|0,location:q.location|0,shape:q.shape|0,preset:q.preset|0,
+    len:q.lengthMm|0,wid:q.widthMm|0,hgt:q.heightMm|0,dia:q.diameterMm|0,depth:q.waterDepthMm|0}]);}
+  if(o.calibration&&o.calibration.emptyCm&&o.calibration.fullCm)steps.push(['/api/calibrate',{empty:o.calibration.emptyCm,full:o.calibration.fullCm}]);
+  const set={};
+  if(o.tank&&o.tank.capacityL!==undefined)set.capacity=o.tank.capacityL;
+  if(o.alarms)set.lowAlarm=o.alarms.lowAlarmPct;
+  if(o.analytics)Object.assign(set,{nightStart:o.analytics.nightStart,nightEnd:o.analytics.nightEnd,leakCm:o.analytics.leakCm,fillCm:o.analytics.fillCmPerMin});
+  if(o.display)Object.assign(set,{units:U[o.display.units]??0,leds:o.display.leds,brightness:o.display.brightness,
+    reversed:o.display.reversed?1:0,colorByLevel:o.display.colorByLevel?1:0});
+  if(o.sensor)set.trigUs=o.sensor.triggerUs;
+  if(o.power)Object.assign(set,{perf:o.power.powerSaving?0:1,tx:TX[o.power.txPower]??0,apMode:AP[o.power.hotspot]??0});
+  if(o.updateRate)Object.assign(set,{rate:{eco:0,balanced:1,responsive:2,custom:3}[o.updateRate.profile]??0,
+    sensorMs:Math.round((o.updateRate.sensorSeconds||5)*1000),refreshS:o.updateRate.dashboardSeconds||10});
+  Object.keys(set).forEach(k=>set[k]===undefined&&delete set[k]);
+  if(Object.keys(set).length)steps.push(['/api/settings',set]);
+  let ok=true;for(const [u,d] of steps){const j=await post(u,d);if(!j.ok){ok=false;break;}}
+  formLoaded=false;profLoaded=false;siteLoaded=false;await poll();
+  toast(ok?`Settings imported. Settings ID now ${settingsId()}`:'Import stopped: a setting was rejected',!ok);}
+
+
+// ---- Update rate ----
+const RATE_N=['Eco','Balanced','Responsive','Custom'],RATE_P=[[5,10],[2,5],[0.5,2]];
+let rateLoaded=false;
+const secTxt=v=>v<1?`${Math.round(v*1000)} ms`:`${+v.toFixed(1)} s`;
+function rateVals(){const p=+$('inRate').value;return p<3?RATE_P[p]:[Math.min(30,Math.max(0.2,iv('inSensS')||5)),Math.min(60,Math.max(2,Math.round(iv('inRefS')||10)))];}
+function rateUI(){const p=+$('inRate').value,[sI,rS]=rateVals(),n=sI>=2?5:7,fl=Math.min(10,Math.max(3,Math.floor(15/sI)));
+  $('rateCustom').hidden=p!==3;
+  $('rPerH').textContent=`${Math.round(3600/sI).toLocaleString()} per hour (every ${secTxt(sI)})`;
+  $('rReact').textContent=`about ${secTxt(sI*Math.ceil(n/2))} (median of ${n})`;
+  $('rFault').textContent=`about ${secTxt(sI*fl)} (${fl} missed readings)`;
+  $('rRefresh').textContent=`every ${rS} s, only while the page is open`;}
+function fillRate(){if(rateLoaded)return;rateLoaded=true;const r=st.rate;
+  $('inRate').value=String(r.profile);$('inSensS').value=+(r.customSensorMs/1000).toFixed(1);$('inRefS').value=r.customRefreshS;rateUI();}
+$('inRate').onchange=rateUI;$('inSensS').oninput=rateUI;$('inRefS').oninput=rateUI;
+async function saveRate(){const p=+$('inRate').value,[sI,rS]=rateVals(),d={rate:p};
+  if(p===3){d.sensorMs=Math.round(sI*1000);d.refreshS=rS;}
+  const j=await post('/api/settings',d);if(j.ok){rateLoaded=false;poll();}}
+
+// ---- Firmware update (OTA) ----
+let otaBusy=false;
+const kb=b=>b>=1048576?(b/1048576).toFixed(2)+' MB':Math.round(b/1024)+' KB';
+function verCmp(a,b){const x=a.split('.').map(Number),y=b.split('.').map(Number);
+  for(let i=0;i<3;i++){if((x[i]||0)!==(y[i]||0))return (x[i]||0)-(y[i]||0);}return 0;}
+function renderOta(){$('otaCur').textContent=st.fw;$('otaBoard').textContent=st.board;$('otaMax').textContent=st.otaMax?kb(st.otaMax):'--';}
+async function otaPick(input){
+  const f=input.files[0];input.value='';if(!f)return;
+  const buf=new Uint8Array(await f.arrayBuffer());
+  if(buf[0]!==0xE9){toast('Not an ESP firmware file. Choose water_level_indicator.ino.bin.',true);return;}
+  const m=new TextDecoder('latin1').decode(buf).match(/Water Tanks Monitor System (\d+\.\d+\.\d+) \| woodyouloveit\.com \| board (esp32|esp8266)/);
+  if(!m){if(!await ask('This file does not look like Water Tanks Monitor System firmware. Installing other firmware removes this dashboard. Install anyway?'))return;}
+  else if(m[2]!==st.boardTag){toast(`This firmware is for ${m[2]==='esp32'?'ESP32':'ESP8266 NodeMCU'}, but this device is ${st.board}.`,true);return;}
+  if(st.otaMax&&f.size>st.otaMax){toast(`The file is ${kb(f.size)}, but only ${kb(st.otaMax)} is free for updates.`,true);return;}
+  const nv=m?m[1]:'unknown',c=m?verCmp(nv,st.fw):1;
+  if(!await ask(`Install firmware ${nv} (${kb(f.size)})? Installed now: ${st.fw}.`+(c<0?' This is an OLDER version.':c===0?' This is the same version.':'')+
+    ' The device restarts afterwards and keeps all settings. Keep it powered during the update.'))return;
+  otaBusy=true;$('btnOta').disabled=true;$('otaBar').hidden=false;$('otaFill').style.width='0%';$('otaMsg').textContent='Uploading…';
+  const fd=new FormData();fd.append('firmware',f,f.name);
+  const xhr=new XMLHttpRequest();xhr.open('POST','/api/ota?auth='+encodeURIComponent(token));
+  xhr.upload.onprogress=e=>{if(e.lengthComputable){const p=Math.round(e.loaded/e.total*100);$('otaFill').style.width=p+'%';
+    $('otaMsg').textContent=p<100?`Uploading ${p}% (${kb(e.loaded)} of ${kb(e.total)})`:'Verifying and installing…';}};
+  xhr.onerror=()=>{otaBusy=false;$('btnOta').disabled=false;$('otaMsg').textContent='Upload failed: connection lost. The current firmware keeps running.';};
+  xhr.onload=async()=>{let j={};try{j=JSON.parse(xhr.responseText);}catch(e){}
+    if(!j.ok){otaBusy=false;$('btnOta').disabled=false;$('otaMsg').textContent=j.message||'Update failed.';toast(j.message||'Update failed',true);return;}
+    $('otaMsg').textContent='Installed. Waiting for the device to restart…';
+    for(let i=0;i<40;i++){await sleep(3000);
+      try{const r=await fetch('/api/status?auth='+encodeURIComponent(token),{cache:'no-store'});const s=await r.json();
+        if(s.fw===nv||(!m&&s.uptime<60)){st=s;otaBusy=false;$('btnOta').disabled=false;$('otaMsg').textContent=`Updated to ${s.fw}.`;
+          toast(`Firmware updated to ${s.fw}`);if(!s.auth.admin)setToken('');render();return;}}catch(e){}}
+    otaBusy=false;$('btnOta').disabled=false;$('otaMsg').textContent='The device has not come back yet. Check its power and Wi-Fi, then reload this page.';};
+  xhr.send(fd);
 }
 
 // ---- Site identity ----
@@ -720,13 +1012,14 @@ function fillSite(){if(siteLoaded||!st.site)return;siteLoaded=true;
   $('inOrg').value=st.site.org;$('inBld').value=st.site.building;$('inTank').value=st.site.tank;}
 
 function fillForm(){const s=st;formLoaded=true;
-  $('inEmpty').value=s.empty;$('inFull').value=s.full;
+  setCm('inEmpty',s.empty);setCm('inFull',s.full);unitDef=s.units;
+  [...$('segUnits').children].forEach(b=>b.classList.toggle('on',+b.dataset.v===unitDef));
   $('inLeds').value=s.leds;$('inBr').value=s.brightness;$('brVal').textContent=s.brightness;
   $('inLow').value=s.lowAlarm;$('lowVal').textContent=s.lowAlarm;
   $('inRev').checked=s.reversed;$('inCbl').checked=s.colorByLevel;$('inTrig').value=s.trigUs;updateAmps();
   if(!$('inSsid').value&&s.wifi.saved)$('inSsid').value=s.wifi.saved;
   fillPower();fillAnalyticsForm();fillSite();
-  $('calNowE').textContent=s.empty.toFixed(1)+' cm';$('calNowF').textContent=s.full.toFixed(1)+' cm';}
+  $('calNowE').textContent=fmtL(s.empty);$('calNowF').textContent=fmtL(s.full);rateLoaded=false;}
 // Worst case current: full tank, ~20 mA per lit color channel at full brightness, plus ~0.2 A for the board
 function updateAmps(){
   const n=Math.max(1,Math.min(300,parseInt($('inLeds').value)||1)),br=$('inBr').value/255,one=$('inCbl').checked;
@@ -738,27 +1031,33 @@ $('inBr').oninput=e=>{$('brVal').textContent=e.target.value;updateAmps();};
 $('inLow').oninput=e=>$('lowVal').textContent=e.target.value;
 
 async function poll(){
-  try{const r=await fetch('/api/status',{cache:'no-store'});st=await r.json();online=true;render();
+  if(otaBusy)return;
+  try{const live=token&&tab==='setup'?'&live=1':'';
+    const r=await fetch('/api/status?auth='+encodeURIComponent(token)+live,{cache:'no-store'});st=await r.json();online=true;
+    if(token&&!st.auth.admin){setToken('');toast('Admin session ended. Log in again to change settings.',true);}
+    render();
     if(!st.epoch&&!timeSent){timeSent=true;fetch('/api/time',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'epoch='+Math.floor(Date.now()/1000)}).catch(()=>{});}}
   catch(e){if(online)toast('Reconnecting to device…',true);online=false;
     $('chip').className='chip bad';$('chipText').textContent='Offline';}
 }
 async function post(url,data){
   try{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
-      body:new URLSearchParams(data||{})});const j=await r.json();toast(j.message,!j.ok);return j;}
+      body:new URLSearchParams(Object.assign({},data||{},token?{auth:token}:{}))});const j=await r.json();
+    if(r.status===403){setToken('');toast('Admin login required',true);poll();return j;}
+    toast(j.message,!j.ok);return j;}
   catch(e){toast('Request failed',true);return {ok:false};}
 }
 
 async function calNow(point){
-  if(!await ask(`Save the live reading (${st.distance.toFixed(1)} cm) as ${point==='empty'?'EMPTY':'FULL'}?`))return;
+  if(!await ask(`Save the live reading (${fmtL(st.distance)}) as ${point==='empty'?'EMPTY':'FULL'}?`))return;
   const j=await post('/api/calibrate',{point});if(j.ok){formLoaded=false;poll();}}
-async function calManual(){const j=await post('/api/calibrate',{empty:$('inEmpty').value,full:$('inFull').value});
+async function calManual(){const j=await post('/api/calibrate',{empty:cmIn('inEmpty').toFixed(1),full:cmIn('inFull').toFixed(1)});
   if(j.ok){formLoaded=false;poll();}}
 async function saveSettings(){
   const n=parseInt($('inLeds').value);
   if(!(n>=1&&n<=300)){toast('Number of LEDs must be 1–300',true);return;}
   const j=await post('/api/settings',{leds:n,brightness:$('inBr').value,lowAlarm:$('inLow').value,
-    reversed:$('inRev').checked?1:0,colorByLevel:$('inCbl').checked?1:0,trigUs:$('inTrig').value});
+    reversed:$('inRev').checked?1:0,colorByLevel:$('inCbl').checked?1:0,trigUs:$('inTrig').value,units:unitDef});
   if(j.ok){formLoaded=false;poll();}}
 async function resetDefaults(){if(!await ask('Reset calibration and display settings to defaults? The number of LEDs and Wi-Fi are not changed.'))return;
   const j=await post('/api/settings',{defaults:1});if(j.ok){formLoaded=false;poll();}}
@@ -810,10 +1109,11 @@ function powerUI(){const m=+$('inApMode').value,eco=$('inEco').checked;
     'Always on. Uses the most power and keeps the board warmest.',
     'Off unless needed: press the BOOT button on the board to turn it on. It turns off after 10 minutes without devices. '+
     'With no home Wi-Fi saved it is still on at start-up for setup.'][m];
-  $('pRate').textContent=eco?'2 per second, LEDs refreshed on change':'14 per second, LEDs 10 times a second';}
+}
 function renderPower(){const s=st;
   $('pCpu').textContent=s.cpuMhz+' MHz';$('pTx').textContent=TX_LBL[s.txLevel];
   $('pMode').textContent=s.perfMode?'Performance':'Power saving';
+  $('pRate').textContent=`${RATE_N[s.rate.profile]}, sensor every ${secTxt(s.rate.sensorMs/1000)}`;
   $('wApMode').textContent=AP_MODES[s.apMode]+(s.wifi.ap?', on now':', off now');}
 [...$('segTx').children].forEach(b=>b.onclick=()=>{txSel=+b.dataset.v;[...$('segTx').children].forEach(x=>x.classList.toggle('on',x===b));});
 $('inApMode').onchange=powerUI;$('inEco').onchange=powerUI;
@@ -837,7 +1137,7 @@ function fmtTime(e){const d=entryTime(e);
 function parseLog(txt){return txt.split('\n').map(l=>l.split('\t')).filter(f=>f.length>=6)
   .map(f=>({boot:+f[0],up:+f[1],epoch:+f[2],lvl:f[3],cat:f[4],msg:f.slice(5).join(' ')}));}
 async function loadLog(){
-  try{const r=await fetch('/api/log',{cache:'no-store'});logRows=parseLog(await r.text());renderLog();}
+  try{if(!isAdmin())return;const r=await fetch('/api/log?auth='+encodeURIComponent(token),{cache:'no-store'});if(!r.ok)return;logRows=parseLog(await r.text());renderLog();}
   catch(e){$('logBox').innerHTML='<p class="help">Could not load the log.</p>';}}
 function renderLog(){
   const f=$('logFilter').value,box=$('logBox');
@@ -882,7 +1182,9 @@ function showTab(t){
   let target=null;
   if(!TABS[t]){const el=t&&document.getElementById(t),m=el&&el.closest('main.tab');
     if(m){target=el;t=Object.keys(TABS).find(k=>TABS[k]===m.id);}}
+  const prevTab=tab;
   tab=TABS[t]?t:'overview';
+  if(st&&tab!==prevTab)setTimeout(poll,0);   // refresh at once (e.g. live readings on Setup)
   document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
   for(const k in TABS)$(TABS[k]).hidden=tab!==k;
   if(target)setTimeout(()=>target.scrollIntoView({behavior:'smooth',block:'start'}),50);
@@ -1059,11 +1361,11 @@ function renderAnalytics(){
     nights.map(n=>`<tr><td>${dayLbl(n.end,true)}</td><td>${n.drop===null?'–':(n.drop>0?'−':'+')+amt(Math.abs(n.drop))}</td>`+
       `<td>${n.drop===null?'–':amt(Math.abs(n.drop)/n.hours)}</td><td><span class="pill ${n.status}">${n.text}</span></td></tr>`).join('')+'</tbody></table>';
   $('nightHelp').textContent=`Level change between ${hh(st.nightStart)} and ${hh(st.nightEnd)} each night. `+
-    `"Possible leak" when it drops ${st.leakCm} cm${l?' ('+Math.round(st.leakCm*10*l)+' L)':''} or more, slowly and steadily, with no fill running. `+
+    `"Possible leak" when it drops ${fmtL(st.leakCm)}${l?' ('+Math.round(st.leakCm*10*l)+' L)':''} or more, slowly and steadily, with no fill running. `+
     `"Water used (one drop)" when most of it happened within one hour, like a tap or flush. "Watch" from half of the limit.`;
   // ---- KPIs ----
   const k=[];const last=done[done.length-1];
-  if(st.filling)k.push(['live','NOW','Filling',st.fillEta>=0?`full in ~${dur(st.fillEta)} · ${st.fillRate.toFixed(1)} cm/min`:`${st.fillRate.toFixed(1)} cm/min`]);
+  if(st.filling)k.push(['live','NOW','Filling',st.fillEta>=0?`full in ~${dur(st.fillEta)} · ${fmtRate(st.fillRate)}`:fmtRate(st.fillRate)]);
   else k.push(['','NOW',st.valid?Math.round(st.level)+'%':'–','motor off']);
   k.push(['','LAST FILL',last?amt(last.smm-last.emm,true):'–',last?`${tLbl(last.s)} · ${dur((last.e-last.s)/60)}`:'none recorded yet']);
   k.push(['','EMPTY → FULL TAKES',rate>0?'≈ '+dur(spanMm()/rate):'–',rate>0?`average of ${done.length} fill${done.length>1?'s':''}`:'needs one full fill']);
@@ -1085,10 +1387,10 @@ document.querySelectorAll('#rangeSeg button').forEach(b=>b.onclick=()=>{rangeH=+
 let rsz;window.addEventListener('resize',()=>{clearTimeout(rsz);rsz=setTimeout(()=>{if(aLoaded&&st)renderAnalytics();},200);});
 
 for(let i=0;i<24;i++){$('inNs').add(new Option(hh(i),i));$('inNe').add(new Option(hh(i),i));}
-function fillAnalyticsForm(){$('inCap').value=st.capacity;$('inFillCm').value=st.fillCm;$('inNs').value=st.nightStart;$('inNe').value=st.nightEnd;$('inLeak').value=st.leakCm;}
+function fillAnalyticsForm(){$('inCap').value=st.capacity;setCm('inFillCm',st.fillCm);$('inNs').value=st.nightStart;$('inNe').value=st.nightEnd;setCm('inLeak',st.leakCm);}
 async function saveAnalytics(){
   if($('inNs').value===$('inNe').value){toast('Night window start and end must differ',true);return;}
-  const j=await post('/api/settings',{capacity:$('inCap').value||0,fillCm:$('inFillCm').value,nightStart:$('inNs').value,nightEnd:$('inNe').value,leakCm:$('inLeak').value});
+  const j=await post('/api/settings',{capacity:$('inCap').value||0,fillCm:cmIn('inFillCm').toFixed(2),nightStart:$('inNs').value,nightEnd:$('inNe').value,leakCm:cmIn('inLeak').toFixed(2)});
   if(j.ok){formLoaded=false;await poll();renderAnalytics();}}
 async function clearHistory(){if(!await ask('Clear all tank history and recorded fills? This cannot be undone.'))return;
   await post('/api/history/clear');loadAnalytics();}
@@ -1173,6 +1475,7 @@ async function logoJpeg(){
 }
 
 function buildReport(logo){
+  const sid=settingsId();
   const P=new Pdf(),M=40,CW=P.W-2*M,A=ana,C={acc:'#0f766e',txt:'#0f172a',mut:'#64748b',line:'#e2e8f0',panel:'#f4f7fa',
     red:'#dc2626',warn:'#d97706',ok:'#16a34a',brand:'#e7004e',fillBand:'#d3f1de',nightBand:'#e9edf2',area:'#dbeeec'};
   P.img=logo;
@@ -1241,7 +1544,8 @@ function buildReport(logo){
     ['Period','Last 7 days, '+period],['Device',`${st.board}, firmware ${st.fw}`],
     ['Usage',`${USAGE[(st.profile||{}).usage||0]}, ${(LOCS[(st.profile||{}).location||0]||'').toLowerCase()}`],
     ['Tank',$('gTank').textContent+(st.capacity&&!(st.profile||{}).preset?', '+st.capacity.toLocaleString()+' L':'')],
-    ['Calibration',`empty at ${st.empty.toFixed(1)} cm, full at ${st.full.toFixed(1)} cm, water depth ${((st.empty-st.full)*10).toFixed(0)} mm`]];
+    ['Calibration',`empty at ${fmtL(st.empty)}, full at ${fmtL(st.full)}, water depth ${fmtMmL((st.empty-st.full)*10)}`],
+    ['Settings ID',settingsId()+' (see Settings used for this report)']];
   info.forEach(([k,v],i)=>{const cx=M+10+(i%2)*(CW/2),cy=y+15+Math.floor(i/2)*15;
     P.text(cx,cy,k,7,{bold:true,color:C.mut});P.text(cx+56,cy,v,7.5);});
   y+=101;
@@ -1275,28 +1579,49 @@ function buildReport(logo){
   table(M,CW,[['Night',0.3],['Change',0.2,'right'],['Per hour',0.2,'right'],['Result',0.3]],
     A.nights.map(n=>[dayLbl(n.end,true),n.drop===null?'-':(n.drop>0?'-':'+')+amt(Math.abs(n.drop)),n.drop===null?'-':amt(Math.abs(n.drop)/n.hours),n.text]),
     A.nights.map(n=>[null,null,null,nc[n.status]||null]));
-  y=P.wrap(M,y+8,`Level change between ${hh(st.nightStart)} and ${hh(st.nightEnd)}. Possible leak: a steady drop of ${st.leakCm} cm${l?' ('+Math.round(st.leakCm*10*l)+' L)':''} or more with no fill running. Water used (one drop): most of the drop within one hour, like a tap or flush.`,7,CW,9,{color:C.mut})+12;
+  y=P.wrap(M,y+8,`Level change between ${hh(st.nightStart)} and ${hh(st.nightEnd)}. Possible leak: a steady drop of ${fmtL(st.leakCm)}${l?' ('+Math.round(st.leakCm*10*l)+' L)':''} or more with no fill running. Water used (one drop): most of the drop within one hour, like a tap or flush.`,7,CW,9,{color:C.mut})+12;
 
   need(60);section('Recent fills (motor runs)');y+=8;
   const fl=A.done.slice(-10).reverse();
   if(fl.length)table(M,CW,[['Started',0.38],['Duration',0.2,'right'],['Added',0.2,'right'],['Rise speed',0.22,'right']],
-    fl.map(f=>[fmtDT(f.s),dur((f.e-f.s)/60),amt(f.smm-f.emm,true),((f.smm-f.emm)/10/((f.e-f.s)/60)).toFixed(2)+' cm/min']));
+    fl.map(f=>[fmtDT(f.s),dur((f.e-f.s)/60),amt(f.smm-f.emm,true),fmtRate((f.smm-f.emm)/10/((f.e-f.s)/60))]));
   else{P.text(M,y+10,'No fills recorded yet.',8,{color:C.mut});y+=16;}
   y+=14;
   need(90);section('How these numbers are calculated');y+=14;
   ['Level is measured by the ultrasonic sensor and recorded every 2 minutes.',
-   `Filling (motor on): the level rises faster than ${st.fillCm} cm/min. Fills under 3 minutes or 3 cm are ignored. Every fill is counted as the motor.`,
+   `Filling (motor on): the level rises faster than ${fmtRate(st.fillCm)}. Fills under 3 minutes or ${fmtL(3,0)} are ignored. Every fill is counted as the motor.`,
    'Water used: level drops outside fills, ignoring changes smaller than the sensor noise.',
    l?`Litres use the tank capacity of ${st.capacity.toLocaleString()} L and assume straight tank walls.`:'Set the tank capacity in Analytics settings to see litres instead of %.']
    .forEach(t=>{P.text(M,y,'\u2022',8,{color:C.acc});y=P.wrap(M+10,y,t,7.5,CW-10,10,{color:C.txt})+2;});
 
+  // ---- settings used (for justification of the figures) ----
+  y+=14;need(120);section('Settings used for this report');y+=8;
+  const S2=settingsObj(),yn=v=>v?'yes':'no',tx=['medium (13 dBm)','high (19.5 dBm)','low (8.5 dBm)'][st.txLevel];
+  const p2=st.profile||{};
+  table(M,CW,[['Setting',0.38],['Value',0.62]],[
+    ['Settings ID',sid+' (matches the exported settings file with the same ID)'],
+    ['Society / building / tank',[S2.site.org,S2.site.building,S2.site.tank].map(v=>v||'-').join(' / ')],
+    ['Usage and location',`${USAGE[p2.usage||0]}, ${(LOCS[p2.location||0]||'').toLowerCase()}`],
+    ['Tank',$('gTank').textContent],
+    ['Rated capacity',st.capacity?st.capacity.toLocaleString()+' L':'not set (amounts shown in %)'],
+    ['Water depth when full',p2.depth?fmtMmL(p2.depth):'not set'],
+    ['Calibration: sensor to water',`empty ${fmtL(st.empty)}, full ${fmtL(st.full)} (range ${fmtMmL((st.empty-st.full)*10)})`],
+    ['Resolution','1 '+ul()+' of water = '+perUnitText(st.capacity,(st.empty-st.full)*10)],
+    ['Units in this report',{cm:'centimetres',mm:'millimetres',in:'inches'}[ul()]],
+    ['Low water alarm',st.lowAlarm+'% of full'],
+    ['Night leak check',`${hh(st.nightStart)}-${hh(st.nightEnd)}, possible leak above ${fmtL(st.leakCm)}`],
+    ['Fill (motor) detection',`rise faster than ${fmtRate(st.fillCm)}`],
+    ['Recording',`level saved every 2 min, fill detection from 10 s samples`],
+    ['Sensor reading',`every ${secTxt(st.rate.sensorMs/1000)} (${RATE_N[st.rate.profile].toLowerCase()} profile), median of ${st.rate.median}, trigger pulse ${st.trigUs} microseconds`],
+    ['Power and radio',`${st.perfMode?'performance':'power saving'}, transmit power ${tx}, hotspot ${['automatic','always on','on demand'][st.apMode]}`],
+    ['Device',`${st.board}, firmware ${st.fw}, ${st.wifi.host}.local`]]);
   // ---- footers on every page ----
   P.pages.forEach((c,i)=>{P.c=c;
     P.line(M,800,P.W-M,800,C.line,0.6);
     P.text(M,812,`\u00a9 ${BRAND.year} ${BRAND.owner}. All Rights Reserved.`,7,{color:C.txt});
     P.text(P.W/2,812,BRAND.site,7,{align:'center',color:C.brand,bold:true});
     P.text(P.W-M,812,`Page ${i+1} of ${P.pages.length}`,7,{align:'right',color:C.mut});
-    P.text(P.W/2,824,`Water Tanks Monitor System, firmware ${st.fw}. Open source under GPL-3.0: ${BRAND.repo}`,6,{align:'center',color:C.mut});});
+    P.text(P.W/2,824,`Water Tanks Monitor System, firmware ${st.fw} · Settings ID ${sid}`,6,{align:'center',color:C.mut});});
   return P.blob({title:'Tank Analytics Report'+(tankT?' - '+tankT:''),author:BRAND.owner,subject:`${siteLine(' / ')||'Water Tanks Monitor System'}, ${period}`,creator:BRAND.site});
 }
 
@@ -1315,7 +1640,9 @@ async function exportPdf(){
 }
 
 poll().then(()=>{showTab(location.hash.slice(1));setTimeout(loadAnalytics,3000);});
-(function tick(){setTimeout(async()=>{if(!document.hidden)await poll();tick();},st&&st.perfMode===0?2000:1000);})();
+// Poll at the device's refresh rate; on the Setup tab every 2 s (live calibration)
+(function tick(){setTimeout(async()=>{if(!document.hidden)await poll();tick();},
+  !st?2000:(tab==='setup'&&isAdmin()?2000:(st.rate?st.rate.refreshS:5)*1000));})();
 setInterval(()=>{if(!document.hidden&&tab==='log'&&$('logAuto').checked)loadLog();},5000);
 setInterval(()=>{if(!document.hidden&&(tab==='analytics'||tab==='overview'))loadAnalytics();},120000);
 </script>

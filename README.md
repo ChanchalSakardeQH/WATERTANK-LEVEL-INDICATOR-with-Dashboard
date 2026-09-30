@@ -21,6 +21,11 @@ One sketch runs on both **ESP32 DevKit V1 (30-pin)** and **NodeMCU ESP8266 (30-p
 - **Wi-Fi setup hotspot** ("WTMS-XXXX", or "WTMS <building> <tank>" once named): connect and the dashboard opens automatically (captive portal)
 - **Wi-Fi settings in the dashboard**: scan, connect, forget. The hotspot comes back by itself if home Wi-Fi is unreachable.
 - **One-tap calibration** from the dashboard ("Tank is EMPTY now" / "Tank is FULL now") or by typing distances
+- **Admin and viewer access**: anyone on the network sees Overview and Analytics; changing settings, logs, clearing history and restarting need the admin password
+- **Units**: mm, cm or inches for every measurement (device default, and each viewer can pick their own)
+- **Firmware update over Wi-Fi (OTA)** from the dashboard, with board and version checks
+- **Update rate profiles**: Eco (default: sensor every 5 s), Balanced, Responsive or Custom
+- **Settings backup**: export and import all settings as a file, with a Settings ID printed in reports
 - **PDF report** of the analytics, branded with the woodyouloveit.com logo and website ([sample](docs/sample_report.pdf))
 - **Tank analytics**: level history, motor run time (fill detection), time to fill, water used per day and by hour, night leak check
 - **Connectivity log** saved in flash: restarts and their cause, Wi-Fi and hotspot events, sensor faults, health checks
@@ -295,7 +300,6 @@ The **Power & radio** card (Setup tab) controls this:
 | | Power saving (default) | Performance |
 |---|---|---|
 | CPU (ESP32) | 80 MHz | 240 MHz |
-| Sensor reads | 2 per second | 14 per second |
 | LED strip | refreshed 4 times a second, only when something changed | 10 times a second |
 | Wi-Fi | modem sleep while the hotspot is off | always awake |
 | Main loop | pauses 5 ms per pass | pauses 1 ms per pass |
@@ -314,6 +318,82 @@ The top LED blinks blue whenever the hotspot is on. Every change is recorded in 
 **Other heat sources**
 - **The 3.3V regulator** next to the USB socket turns 5V into 3.3V for the ESP32 and the sensor. It gets warm, and that's normal. If it's too hot to touch, check for a short on 3V3 and make sure the LED strip is powered from the 5V supply, not through the board.
 - **The enclosure:** leave a few ventilation holes, and don't mount the board against the LED strip or in direct sun.
+
+## Admin and viewer access
+
+| | Viewer (no login) | Admin |
+|---|---|---|
+| Overview tab (level, litres, tank at a glance) | ✓ | ✓ |
+| Analytics tab (charts, fills, night check, PDF report) | ✓ | ✓ |
+| Analytics settings: save, clear history | view only | ✓ |
+| Setup tab (tank, calibration, site, display, power, Wi-Fi, device, backup) | hidden | ✓ |
+| Log tab | hidden | ✓ |
+| Restart the device, reset to defaults | ✗ | ✓ |
+
+- Press **Admin** in the header to log in. The **default password is `admin`**, and it must be changed at the first login (at least 6 characters).
+- **Forgot the password?** Hold the **BOOT** button (ESP32) or **FLASH** button (NodeMCU) for **10 seconds** until the strip flashes red. The password goes back to `admin`.
+- An admin session ends after 12 hours without activity, or when the device restarts. Up to 3 admin sessions can be open at once.
+- After 5 wrong passwords, login is blocked for a minute. Logins, failed logins and password changes are recorded in the log.
+- **Security note:** the password itself never crosses the network. The browser answers a one-time challenge with a SHA-256 proof, and only a salted hash is stored on the device. The dashboard uses plain HTTP, though, so on an untrusted network the session token could be observed. Keep the device on your own Wi-Fi.
+
+## Units
+
+All measurements can be shown in **mm**, **cm** or **inches**: distances, tank dimensions, water depth, calibration, leak limit, fill speed, the "1 unit of water = X L" resolution, and the PDF report.
+
+- **Admin default for everyone:** Setup → Display & sensor → *Units for everyone*.
+- **Per browser:** the *Units* menu in the Water level card overrides the default on that phone or PC only.
+
+The device always stores centimetres and millimetres internally, so switching units never changes the calibration.
+
+## Settings backup and the Settings ID
+
+Setup → **Admin & backup**:
+- **Export settings** downloads a JSON file with the site, tank profile, calibration, capacity, alarms, analytics, units, display, sensor and power settings.
+- **Import settings** restores such a file, on this device or another one. Wi-Fi is not changed.
+- Wi-Fi passwords and the admin password are **never** exported.
+
+The **Settings ID** is an 8-character fingerprint of those settings. It's shown in the Admin card, in the exported file, in the PDF report's details and footer, and in the report's **"Settings used for this report"** page.
+Anyone checking a report can confirm which configuration produced its figures by matching the ID with an exported settings file.
+
+## Update rate
+
+How often the sensor is read and how often an **open** dashboard refreshes (Setup → **Update rate**):
+
+| Profile | Sensor reading | Median of | Level follows a change within | "No echo" after | Dashboard refresh |
+|---|---|---|---|---|---|
+| **Eco** (default) | every 5 s (720/hour) | 5 | ~15 s | ~15 s | every 10 s |
+| Balanced | every 2 s | 5 | ~6 s | ~14 s | every 5 s |
+| Responsive | every 0.5 s | 7 | ~2 s | ~5 s | every 2 s |
+| Custom | 0.2–30 s | 5 or 7 | shown in the card | shown in the card | 2–60 s |
+
+- The dashboard refresh only happens while someone has the page open. With no page open, the device serves nothing.
+- History (every 2 min), fill detection (every 10 s) and the night leak check don't depend on the profile.
+- **Live mode for calibration:** while an admin has the Setup tab open, the device reads every 0.5 s and the page refreshes every 2 s.
+  It returns to the saved profile 20 s after the Setup tab is closed.
+- The biggest continuous power user is the Wi-Fi radio, not the sensor. For the coolest, longest-lived setup, combine **Eco** with **Power saving**, the **On demand** hotspot and **Low/Medium** transmit power.
+
+## Firmware update over Wi-Fi (OTA)
+
+Setup → **Firmware update** (admin only):
+
+1. In Arduino IDE, with the same board settings as before, choose **Sketch → Export Compiled Binary**.
+2. In the sketch folder, open `build/<board>/` and take **`water_level_indicator.ino.bin`**, not the `.bootloader`, `.partitions` or `.merged` files.
+3. In the dashboard, press **Choose firmware file…**. Before uploading, the dashboard checks that:
+   - it's an ESP firmware file
+   - it's Water Tanks Monitor System firmware for **this** board (ESP32 or ESP8266)
+   - it fits in the free space
+
+   It also shows the version and warns about downgrades.
+4. Confirm. A progress bar shows the upload. The device verifies the image, restarts, and the page reports the new version.
+
+**Kept:** settings, Wi-Fi, admin password, calibration, history and logs.
+**Safety:** the new firmware goes into the spare program slot. If the upload is interrupted or the image fails verification, the current firmware keeps running.
+
+**Size limits:**
+- **ESP32** (Partition Scheme "Default 4MB with spiffs"): two 1.2 MB program slots. Anything that fits by USB fits OTA.
+- **ESP8266 NodeMCU:** the new program is written next to the running one inside a ~1 MB area, so OTA works only while the program is under about **500 KB**. The card shows the space available. If a build is too big, update once by USB.
+
+Every update and failure is recorded in the connectivity log.
 
 ## Tank analytics
 
@@ -357,7 +437,8 @@ In the **Analytics** tab, press **Download PDF report**. The report is created i
 
 - **Page 1:** woodyouloveit.com logo and website, report date and period, device and tank details, summary tiles, 7-day level history chart, motor run time and water used per day
 - **Page 2:** usage by hour of day, night leak check table, recent fills, how the numbers are calculated
-- **Every page:** © 2026 Chanchal Sakarde. All Rights Reserved., woodyouloveit.com, page number, and the GPL-3.0 source link
+- **Page 3:** "Settings used for this report": calibration, capacity, resolution, units, alarm limits, night window, leak and fill thresholds, recording intervals, power mode, firmware and the Settings ID
+- **Every page:** © 2026 Chanchal Sakarde. All Rights Reserved., woodyouloveit.com, page number, firmware and Settings ID
 
 See the [sample report](docs/sample_report.pdf) (made from simulated data).
 If you opened the dashboard from the hotspot's pop-up window, open `http://192.168.4.1` in your normal browser first. Some pop-up windows don't allow downloads.
@@ -450,6 +531,7 @@ water-level-indicator/
 ├── water_level_indicator/
 │   ├── water_level_indicator.ino   # Sketch for ESP32 and ESP8266
 │   ├── dashboard_html.h            # Web dashboard page (HTML/CSS/JS)
+│   ├── auth.h                      # Admin login: SHA-256, password, sessions
 │   ├── event_log.h                 # Connectivity log stored in flash (LittleFS)
 │   └── history.h                   # Level history and fill (motor) detection
 ├── docs/
