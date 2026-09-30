@@ -1,15 +1,43 @@
 /*
-  YUCCA Tank Water Level                                   firmware 2.1.0
+  Water Tanks Monitor System - main firmware (ESP32 / ESP8266)
+  woodyouloveit.com
+  Copyright (C) 2026 Chanchal Sakarde. All Rights Reserved, except as granted by the license below.
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+  Source: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard
+  SPDX-License-Identifier: GPL-3.0-or-later
+*/
+
+/*
+  Water Tanks Monitor System (WTMS)                        firmware 2.6.1
   ESP32 DevKit or ESP8266 NodeMCU + AJ-SR04M / JSN-SR04T + WS2812B strip (1-300 LEDs, set in the dashboard)
 
-  - No home Wi-Fi saved: opens the hotspot "YUCCA TANK WATER LEVEL".
+  - Each device is named in the dashboard: society / organisation, building, tank.
+    The names appear on the dashboard and PDF report, and set the hotspot name
+    ("WTMS <building> <tank>") and web address (http://tank-<building>-<tank>.local),
+    so several tanks can run side by side.
+  - No home Wi-Fi saved: opens the hotspot (default "WTMS-XXXX", XXXX = chip ID).
     Connect to it and the dashboard opens automatically (captive portal).
   - Wi-Fi is set up from the dashboard (Wi-Fi settings: scan, connect, forget).
-  - Connected to home Wi-Fi: http://yucca-tank.local or the device IP.
+  - Connected to home Wi-Fi: http://<hostname>.local or the device IP.
     The hotspot turns off 30 s after a successful connection and comes back
     automatically if the home network can't be reached.
   - Calibration, settings and Wi-Fi are saved in flash.
   - Connectivity log (restarts, Wi-Fi, hotspot, sensor) kept in flash for debugging.
+  - Tank analytics: 14-day level history, fill (motor run) detection, consumption,
+    night leak check. Recorded in flash, analysed in the dashboard.
     Needs a flash layout with a filesystem: Tools > Flash Size "4MB (FS:2MB ...)"
     on ESP8266, or any default partition scheme on ESP32.
 
@@ -26,8 +54,11 @@
   #define BOARD_NAME "ESP32"
   #define WIFI_OPEN  WIFI_AUTH_OPEN
   #define LED_PIN   16   // G16 -> 330R -> strip DIN
-  #define TRIG_PIN  17   // G17 -> sensor TRIG (AJ-SR04M: RX)
-  #define ECHO_PIN  18   // G18 <- sensor ECHO (AJ-SR04M: TX)
+  // Sensor on 4 neighbouring pins: 3V3, GND, D15, D2 (one 4-pin connector).
+  // D15 and D2 are boot strapping pins: TRIG must be on D15 (output) and ECHO on D2,
+  // because the sensor's echo rests LOW, which keeps uploading over USB working.
+  #define TRIG_PIN  15   // D15 -> sensor TRIG (AJ-SR04M: RX)
+  #define ECHO_PIN   2   // D2  <- sensor ECHO (AJ-SR04M: TX), 3.3V only (sensor on 3V3)
 #elif defined(ESP8266)
   #include <ESP8266WiFi.h>
   #include <ESP8266WebServer.h>
@@ -49,10 +80,10 @@
 #include <Adafruit_NeoPixel.h>
 #include "dashboard_html.h"
 #include "event_log.h"
+#include "history.h"
 
-#define FW_VERSION  "2.3.1"
-#define AP_NAME     "YUCCA TANK WATER LEVEL"
-#define HOSTNAME    "yucca-tank"
+#define FW_VERSION  "2.6.1"
+#define PRODUCT     "Water Tanks Monitor System"
 #define DEFAULT_LEDS 30
 #define MAX_LEDS     300
 
@@ -79,6 +110,12 @@ struct Settings {
   uint8_t  colorByLevel;
   uint8_t  apAlways;      // 1 = keep the hotspot on even when home Wi-Fi works
   uint16_t numLeds;      // added in 2.2.0; older saves read as invalid -> default
+  // added in 2.4.0 (analytics)
+  uint32_t capacityL;    // tank capacity in litres, 0 = unknown
+  uint8_t  nightStart;   // night leak check window, local hours
+  uint8_t  nightEnd;
+  uint16_t leakMm;       // night drop that counts as a possible leak (mm)
+  uint16_t fillMmMin;    // minimum rise speed that counts as filling (mm/min)
 };
 const uint32_t SETTINGS_MAGIC = 0x59544B32;   // "YTK2"
 Settings cfg;
@@ -98,6 +135,79 @@ struct BootInfo { uint32_t magic; uint32_t count; };
 const uint32_t BOOT_MAGIC = 0x59424F54;       // "YBOT"
 const int      BOOT_ADDR  = 200;
 uint32_t bootCount = 0;
+
+// ================= Site identity (EEPROM offset 256) =================
+struct Identity {
+  uint32_t magic;
+  char     org[49];       // society / organisation
+  char     building[33];
+  char     tank[33];
+};
+const uint32_t ID_MAGIC = 0x5754494E;         // "WTIN"
+const int      ID_ADDR  = 256;
+Identity ident;
+String apName, hostName;                       // derived from the identity at boot
+
+String chipSuffix() {
+#if defined(ESP8266)
+  uint32_t id = ESP.getChipId();
+#else
+  uint32_t id = (uint32_t)(ESP.getEfuseMac() >> 24);
+#endif
+  char b[5];
+  snprintf(b, sizeof(b), "%04X", (unsigned)(id & 0xFFFF));
+  return String(b);
+}
+
+// "Tower A / Tank 1" -> "tower-a-tank-1"
+String slug(const String& in) {
+  String o;
+  for (unsigned int i = 0; i < in.length(); i++) {
+    char c = in[i];
+    if (c >= 'A' && c <= 'Z') c = c - 'A' + 'a';
+    bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+    if (ok) o += c;
+    else if (o.length() && o[o.length() - 1] != '-') o += '-';
+  }
+  while (o.length() && o[o.length() - 1] == '-') o.remove(o.length() - 1);
+  return o;
+}
+
+void deriveNames(String& apOut, String& hostOut) {
+  String b = ident.building, t = ident.tank;
+  b.trim(); t.trim();
+  if (b.length() || t.length()) {
+    apOut = "WTMS";
+    if (b.length()) apOut += " " + b;
+    if (t.length()) apOut += " " + t;
+    if (apOut.length() > 32) apOut = apOut.substring(0, 32);
+    apOut.trim();
+    hostOut = "tank";
+    String sb = slug(b), st = slug(t);
+    if (sb.length()) hostOut += "-" + sb;
+    if (st.length()) hostOut += "-" + st;
+    if (hostOut.length() > 48) hostOut = hostOut.substring(0, 48);
+    while (hostOut.endsWith("-")) hostOut.remove(hostOut.length() - 1);
+  } else {
+    apOut = "WTMS-" + chipSuffix();
+    hostOut = "watertank-" + chipSuffix();
+    hostOut.toLowerCase();
+  }
+}
+
+void saveIdentity() { ident.magic = ID_MAGIC; EEPROM.put(ID_ADDR, ident); EEPROM.commit(); }
+
+// Keep printable characters only, trimmed, max `size-1` bytes
+void setIdField(char* dst, size_t size, String v) {
+  v.trim();
+  String o;
+  for (unsigned int i = 0; i < v.length() && o.length() < size - 1; i++) {
+    uint8_t c = v[i];
+    if (c >= 0x20 && c != 0x7F && c != '"' && c != '\\') o += (char)c;
+  }
+  memset(dst, 0, size);
+  strncpy(dst, o.c_str(), size - 1);
+}
 
 Adafruit_NeoPixel strip(DEFAULT_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);  // length set from settings
 WebServerT server(80);
@@ -181,12 +291,19 @@ uint32_t supplyMv() {
 }
 
 // ================= Storage =================
+void setAnalyticsDefaults();
 void setDefaults() {
   cfg.magic = SETTINGS_MAGIC;
   cfg.distEmpty = 120.0;  cfg.distFull = 25.0;  cfg.lowAlarm = 0.10;
   cfg.trigUs = 100;       cfg.brightness = 150;
   cfg.reversed = 0;       cfg.colorByLevel = 0;  cfg.apAlways = 0;
   cfg.numLeds = DEFAULT_LEDS;
+  setAnalyticsDefaults();
+}
+
+void setAnalyticsDefaults() {
+  cfg.capacityL = 0;  cfg.nightStart = 1;  cfg.nightEnd = 5;
+  cfg.leakMm = 15;    cfg.fillMmMin = 5;
 }
 
 void saveSettings() { EEPROM.put(0, cfg); EEPROM.commit(); }
@@ -194,7 +311,7 @@ void saveCreds()    { EEPROM.put(WIFI_ADDR, creds); EEPROM.commit(); }
 bool haveCreds()    { return creds.magic == WIFI_MAGIC && creds.ssid[0] != 0; }
 
 void loadStorage() {
-  EEPROM.begin(256);
+  EEPROM.begin(512);
   EEPROM.get(0, cfg);
   if (cfg.magic != SETTINGS_MAGIC || isnan(cfg.distEmpty) || isnan(cfg.distFull) ||
       isnan(cfg.lowAlarm) || cfg.distEmpty - cfg.distFull < 10) {
@@ -206,6 +323,11 @@ void loadStorage() {
     saveSettings();
   }
   if (cfg.apAlways > 1) { cfg.apAlways = 0; saveSettings(); }
+  if (cfg.capacityL > 1000000 || cfg.nightStart > 23 || cfg.nightEnd > 23 || cfg.nightStart == cfg.nightEnd ||
+      cfg.leakMm < 2 || cfg.leakMm > 500 || cfg.fillMmMin < 1 || cfg.fillMmMin > 200) {   // saved by 2.3.x or older
+    setAnalyticsDefaults();
+    saveSettings();
+  }
 
   BootInfo bi;
   EEPROM.get(BOOT_ADDR, bi);
@@ -218,6 +340,10 @@ void loadStorage() {
   if (creds.magic != WIFI_MAGIC) memset(&creds, 0, sizeof(creds));
   creds.ssid[32] = 0;
   creds.pass[64] = 0;
+  EEPROM.get(ID_ADDR, ident);
+  if (ident.magic != ID_MAGIC) memset(&ident, 0, sizeof(ident));
+  ident.org[48] = 0; ident.building[32] = 0; ident.tank[32] = 0;
+  deriveNames(apName, hostName);
 }
 
 // ================= Ultrasonic (non-blocking) =================
@@ -337,7 +463,7 @@ const char* netStateName();
 void startAP(const char* why) {
   if (apActive) return;
   WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP(AP_NAME);
+  WiFi.softAP(apName.c_str());
   delay(100);
   dns.setErrorReplyCode(DNSReplyCode::NoError);
   dns.start(53, "*", WiFi.softAPIP());         // every name -> dashboard (captive portal)
@@ -381,7 +507,7 @@ void onConnected() {
   }
   netMsg = "Connected to " + WiFi.SSID();
   if (apActive && !cfg.apAlways) apOffAt = millis() + AP_OFF_DELAY;
-  if (!mdnsStarted && MDNS.begin(HOSTNAME)) {
+  if (!mdnsStarted && MDNS.begin(hostName.c_str())) {
     MDNS.addService("http", "tcp", 80);
     mdnsStarted = true;
   }
@@ -508,11 +634,17 @@ void diagTask() {
   uint32_t heap = ESP.getFreeHeap();
   if (heap < minHeap) minHeap = heap;
 
-  if (!logEpochBase && net == NET_CONNECTED) {
+  static unsigned long lastNtpCheck = 0;
+  if (net == NET_CONNECTED && (!logEpochBase || now - lastNtpCheck > 600000)) {
+    lastNtpCheck = now;
     time_t t = time(nullptr);
     if (t > 1700000000) {
-      setClock((uint32_t)t);
-      logWrite('I', "sys", "Clock synced from internet");
+      long diff = (long)t - (long)nowEpoch();
+      if (!logEpochBase) { setClock((uint32_t)t); logWrite('I', "sys", "Clock synced from internet"); }
+      else if (diff > 2 || diff < -2) {
+        setClock((uint32_t)t);
+        if (diff > 60 || diff < -60) logWrite('I', "sys", "Clock corrected by " + String(diff) + " s");
+      }
     }
   }
 
@@ -583,7 +715,7 @@ void handleStatus() {
   bool conn = net == NET_CONNECTED;
   unsigned long now = millis();
   String j;
-  j.reserve(900);
+  j.reserve(1200);
   j += "{\"fw\":\"" FW_VERSION "\",\"board\":\"" BOARD_NAME "\"";
   j += ",\"valid\":";        j += sensorOK ? "true" : "false";
   j += ",\"distance\":";     j += String(sensorOK ? currentDistance : 0, 1);
@@ -605,6 +737,15 @@ void handleStatus() {
   j += ",\"epoch\":";        j += String(nowEpoch());
   j += ",\"logStore\":\"";  j += logFsOK ? "flash" : "memory";
   j += "\",\"apAlways\":";  j += cfg.apAlways ? "true" : "false";
+  j += ",\"filling\":";      j += fd.filling ? "true" : "false";
+  j += ",\"fillRate\":";     j += String(fd.filling ? fd.rateMmMin / 10.0 : 0.0, 2);
+  j += ",\"fillStart\":";    j += String(fd.filling ? fd.startT : 0);
+  j += ",\"fillEta\":";      j += String(fillEtaMin(sensorOK ? currentDistance : -1, cfg.distFull), 0);
+  j += ",\"capacity\":";     j += String(cfg.capacityL);
+  j += ",\"nightStart\":";   j += String(cfg.nightStart);
+  j += ",\"nightEnd\":";     j += String(cfg.nightEnd);
+  j += ",\"leakCm\":";       j += String(cfg.leakMm / 10.0, 1);
+  j += ",\"fillCm\":";       j += String(cfg.fillMmMin / 10.0, 1);
   j += ",\"wifi\":{\"saved\":\""; j += jsonEscape(haveCreds() ? String(creds.ssid) : String(""));
   j += "\",\"state\":\"";    j += netStateName();
   j += "\",\"ssid\":\"";     j += jsonEscape(conn ? WiFi.SSID() : trySsid);
@@ -612,10 +753,18 @@ void handleStatus() {
   j += "\",\"rssi\":";       j += String(conn ? (int)WiFi.RSSI() : 0);
   j += ",\"msg\":\"";        j += jsonEscape(netMsg);
   j += "\",\"ap\":";         j += apActive ? "true" : "false";
-  j += ",\"apName\":\"" AP_NAME "\",\"apIp\":\""; j += WiFi.softAPIP().toString();
+  j += ",\"apName\":\""; j += jsonEscape(apName); j += "\",\"apIp\":\""; j += WiFi.softAPIP().toString();
   j += "\",\"apClients\":";  j += String(apActive ? (int)WiFi.softAPgetStationNum() : 0);
   j += ",\"apOffIn\":";      j += String(apActive && apOffAt > now ? (apOffAt - now) / 1000 + 1 : 0);
-  j += ",\"host\":\"" HOSTNAME "\"}}";
+  j += ",\"host\":\""; j += hostName; j += "\"}";
+  String nextAp, nextHost;
+  deriveNames(nextAp, nextHost);                 // names that apply after the next restart
+  j += ",\"site\":{\"org\":\"";  j += jsonEscape(ident.org);
+  j += "\",\"building\":\"";     j += jsonEscape(ident.building);
+  j += "\",\"tank\":\"";         j += jsonEscape(ident.tank);
+  j += "\",\"nextAp\":\"";       j += jsonEscape(nextAp);
+  j += "\",\"nextHost\":\"";     j += nextHost;
+  j += "\"}}";
   sendJson(200, j);
 }
 
@@ -644,12 +793,20 @@ void handleSettings() {
   bool defaults = server.hasArg("defaults");
   uint16_t oldLeds = cfg.numLeds;
   uint8_t oldAp = cfg.apAlways;
+  uint32_t oldCap = cfg.capacityL;
   if (defaults) {
     setDefaults();
     cfg.numLeds = oldLeds;              // LED count describes the hardware, keep it
     cfg.apAlways = oldAp;               // Wi-Fi behaviour is not a display setting
+    cfg.capacityL = oldCap;             // tank size is hardware too
   } else {
     if (server.hasArg("leds"))         cfg.numLeds      = constrain(server.arg("leds").toInt(), 1, MAX_LEDS);
+    if (server.hasArg("capacity"))   cfg.capacityL  = constrain(server.arg("capacity").toInt(), 0, 1000000);
+    if (server.hasArg("nightStart")) cfg.nightStart = constrain(server.arg("nightStart").toInt(), 0, 23);
+    if (server.hasArg("nightEnd"))   cfg.nightEnd   = constrain(server.arg("nightEnd").toInt(), 0, 23);
+    if (cfg.nightStart == cfg.nightEnd) cfg.nightEnd = (cfg.nightStart + 4) % 24;
+    if (server.hasArg("leakCm"))     cfg.leakMm     = constrain((int)(server.arg("leakCm").toFloat() * 10 + 0.5), 2, 500);
+    if (server.hasArg("fillCm"))     cfg.fillMmMin  = constrain((int)(server.arg("fillCm").toFloat() * 10 + 0.5), 1, 200);
     if (server.hasArg("apAlways")) {
       uint8_t v = server.arg("apAlways").toInt() ? 1 : 0;
       if (v != cfg.apAlways) {
@@ -737,6 +894,32 @@ void handleRestart() {
 }
 
 void handleLog()      { logStream(server, server.hasArg("download")); }
+
+void handleHistory() {
+  const char* files[] = {HIST_OLD, HIST_FILE};
+  streamFiles(server, files, 2, "application/octet-stream", server.hasArg("download") ? "wtms-history.bin" : nullptr);
+}
+void handleFills() {
+  const char* files[] = {FILL_OLD, FILL_FILE};
+  streamFiles(server, files, 2, "application/octet-stream", nullptr);
+}
+void handleSite() {
+  if (server.hasArg("org"))      setIdField(ident.org, sizeof(ident.org), server.arg("org"));
+  if (server.hasArg("building")) setIdField(ident.building, sizeof(ident.building), server.arg("building"));
+  if (server.hasArg("tank"))     setIdField(ident.tank, sizeof(ident.tank), server.arg("tank"));
+  saveIdentity();
+  String nextAp, nextHost;
+  deriveNames(nextAp, nextHost);
+  logWrite('I', "cfg", String("Site details saved: ") + ident.org + " / " + ident.building + " / " + ident.tank);
+  bool rename = nextAp != apName || nextHost != hostName;
+  sendResult(true, rename ? "Saved. Restart the device to use the new hotspot name and web address."
+                          : "Site details saved");
+}
+void handleHistoryClear() {
+  historyClear();
+  logWrite('I', "tank", "Tank history cleared from dashboard");
+  sendResult(true, "History cleared");
+}
 void handleLogClear() {
   logClear();
   logWrite('I', "sys", "Log cleared from dashboard");
@@ -779,6 +962,9 @@ String getResetReason() {
 void setup() {
   Serial.begin(115200);
   delay(200);
+  Serial.println();
+  Serial.println(F(PRODUCT " " FW_VERSION " | woodyouloveit.com"));
+  Serial.println(F("(C) 2026 Chanchal Sakarde. All Rights Reserved. Open source under GPL-3.0."));
   resetReason = getResetReason();
   loadStorage();
   logBegin(bootCount);
@@ -810,10 +996,10 @@ void setup() {
   WiFi.mode(WIFI_OFF);
   delay(50);
 #if defined(ESP8266)
-  WiFi.hostname(HOSTNAME);
+  WiFi.hostname(hostName);
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
 #else
-  WiFi.setHostname(HOSTNAME);
+  WiFi.setHostname(hostName.c_str());
 #endif
   WiFi.setAutoReconnect(false);
 
@@ -853,6 +1039,10 @@ void setup() {
   server.on("/api/log",           HTTP_GET,  handleLog);
   server.on("/api/log/clear",     HTTP_POST, handleLogClear);
   server.on("/api/time",          HTTP_POST, handleTime);
+  server.on("/api/history",       HTTP_GET,  handleHistory);
+  server.on("/api/fills",         HTTP_GET,  handleFills);
+  server.on("/api/history/clear", HTTP_POST, handleHistoryClear);
+  server.on("/api/site",          HTTP_POST, handleSite);
   server.onNotFound(handleNotFound);
   server.begin();
   lastLoopAt = millis();
@@ -867,6 +1057,8 @@ void loop() {
   if (mdnsStarted) MDNS.update();
 #endif
   sensorTask();
+  fillTask(sensorOK ? currentDistance : -1, cfg.fillMmMin, cfg.distFull);
+  historyTask(sensorOK ? currentDistance : -1);
   displayTask();
 
   static unsigned long lastLog = 0;

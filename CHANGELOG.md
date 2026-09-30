@@ -7,6 +7,65 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-09-30
+
+### Changed
+- ESP32 sensor pins moved to **D15 (TRIG, sensor RX)** and **D2 (ECHO, sensor TX)**, so the sensor uses four neighbouring pins: 3V3, GND, D15, D2. LED strip stays on G16.
+- ESP32 sensor is powered from 3V3 with the echo wired directly (no divider).
+- Sensor diagnostic sketch uses the same ESP32 pins.
+- ESP32 wiring diagram redrawn: four straight wires from 3V3/GND/D15/D2, and a note about the strapping pins.
+
+### Notes
+- D15 and D2 are ESP32 strapping pins. TRIG must be on D15 and ECHO on D2, not swapped: the echo resting LOW keeps D2 LOW, so USB uploads keep working.
+
+## [2.6.0] - 2026-09-30
+
+### Changed
+- Renamed the product from "YUCCA Tank Water Level" to **Water Tanks Monitor System** (WTMS). YUCCA is now just one possible building name.
+- Hotspot name: "WTMS <building> <tank>", or "WTMS-XXXX" from the chip ID when not named (was "YUCCA TANK WATER LEVEL").
+- Web address: `tank-<building>-<tank>.local`, or `watertank-xxxx.local` when not named (was `yucca-tank.local`). Every tank in a society gets its own.
+- Download file names: `wtms-report-<building>-<tank>-<date>.pdf`, `wtms-log-...txt`, `wtms-history.bin`.
+
+### Added
+- **Site details** card: society / organisation, building and tank names, saved in flash (EEPROM offset 256, EEPROM size now 512 bytes). Existing calibration, Wi-Fi and settings are kept.
+- Site names in the dashboard header, browser tab title and footer, and a banner until the tank is named.
+- PDF report: site title (society, building, tank), a site details table, and building and tank in every page header, the PDF properties and the file name.
+- Connectivity log download header includes the site names and web address.
+- Preview of the hotspot name and web address with a restart prompt when they change.
+- `/api/site` endpoint and a `site` object in `/api/status`.
+
+## [2.5.0] - 2026-09-30
+
+### Added
+- woodyouloveit.com branding: logo bar at the top of the dashboard (built into the firmware, works offline), page title, heart favicon, and a footer with "© 2026 Chanchal Sakarde. All Rights Reserved.", the website link, the GPL-3.0 link and a source code link.
+- **Download PDF report** in the Analytics tab. It's a two-page A4 report generated in the browser with no libraries, so it works offline: logo, website, period, device and tank details, summary tiles, 7-day level chart, motor time and water used per day, usage by hour, night leak check, recent fills and method notes. Every page has the copyright, website, page number and license line. PDF properties: author Chanchal Sakarde, creator woodyouloveit.com.
+- GPL-3.0 license notice with copyright and `SPDX-License-Identifier: GPL-3.0-or-later` at the top of every source file (`.ino`, `.h`, diagnostic sketch, diagram generator), plus an HTML comment in the dashboard page.
+- `LICENSE` file (GNU GPL v3).
+- Brand and copyright line in the Serial Monitor start-up message and in the downloaded connectivity log.
+- Logo and copyright line on the wiring diagrams.
+- `docs/logo.png` and `docs/sample_report.pdf`.
+
+### Changed
+- README: logo, brand and copyright at the top, new PDF report, Branding and License sections.
+
+## [2.4.0] - 2026-09-29
+
+### Added
+- Tank analytics (`history.h`): level recorded every 2 minutes in flash (14 days, two rotating files), stored as distance so recalibration also corrects history.
+- Fill (motor run) detection on the device from 10-second samples: start, end, rise and speed. Fills are saved and logged ("Filling started / stopped").
+- Live filling status in `/api/status`: filling, rise speed, start time, minutes until full.
+- Dashboard tabs: **Overview**, **Analytics**, **Log**.
+- Analytics tab: summary tiles (now/filling, last fill, empty→full time, motor today, used today, busiest hour, last night), level history chart (24 h / 3 / 7 / 14 days) with fill and night bands and hover values, motor run time per day with recent fills, water used per day, usage by hour of day, night leak check table.
+- Night leak check separates a slow, steady drop ("Possible leak") from a single drop within one hour ("Water used (one drop)").
+- Leak warning for last night on the Overview tab.
+- Analytics settings: tank capacity in litres, fill detection threshold, night window, leak limit, clear history.
+- `/api/history`, `/api/fills`, `/api/history/clear` endpoints.
+- Clock re-synced from the internet every 10 minutes on home Wi-Fi.
+
+### Changed
+- Connectivity log moved to its own tab.
+- **Defaults** also keeps tank capacity (it describes the hardware).
+
 ## [2.3.1] - 2026-09-29
 
 ### Fixed
@@ -110,4 +169,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Sensor fault indication: bottom LED blinks blue when there is no echo.
 - `COLOR_BY_LEVEL` option to color the whole bar by level.
 - `STRIP_REVERSED` option for strips mounted top-down.
-- Startup sweep animation. 
+- Startup sweep animation.
+
+[Unreleased]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.6.1...HEAD
+[2.6.1]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.6.0...v2.6.1
+[2.6.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.5.0...v2.6.0
+[2.5.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.4.0...v2.5.0
+[2.4.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.3.1...v2.4.0
+[2.3.1]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.3.0...v2.3.1
+[2.3.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.2.0...v2.3.0
+[2.2.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.1.0...v2.2.0
+[2.1.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.0.0...v2.1.0
+[2.0.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v1.1.0...v2.0.0
+[1.1.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/releases/tag/v1.0.0

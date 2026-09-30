@@ -1,4 +1,10 @@
-# YUCCA Tank Water Level
+<p align="center">
+  <a href="https://woodyouloveit.com"><img src="docs/logo.png" alt="woodyouloveit.com" width="420"></a>
+</p>
+
+# Water Tanks Monitor System
+
+**by [woodyouloveit.com](https://woodyouloveit.com)** · © 2026 Chanchal Sakarde. All Rights Reserved. · Open source under [GPL-3.0](LICENSE)
 
 A tank water level indicator using a waterproof ultrasonic sensor, a WS2812B LED strip (1–300 LEDs) and a built-in web dashboard.
 The strip fills from the bottom as the water rises: **red at the bottom, fading through yellow to green at the top**.
@@ -8,9 +14,12 @@ One sketch runs on both **ESP32 DevKit V1 (30-pin)** and **NodeMCU ESP8266 (30-p
 ## Features
 
 - **Web dashboard** for desktop and mobile browsers: live level, calibration, display settings, Wi-Fi settings
-- **Wi-Fi setup hotspot** "YUCCA TANK WATER LEVEL": connect and the dashboard opens automatically (captive portal)
+- **Site details**: name each device by society or organisation, building and tank. The names appear on the dashboard, PDF reports and logs, and give every tank its own hotspot name and web address.
+- **Wi-Fi setup hotspot** ("WTMS-XXXX", or "WTMS <building> <tank>" once named): connect and the dashboard opens automatically (captive portal)
 - **Wi-Fi settings in the dashboard**: scan, connect, forget. The hotspot comes back by itself if home Wi-Fi is unreachable.
 - **One-tap calibration** from the dashboard ("Tank is EMPTY now" / "Tank is FULL now") or by typing distances
+- **PDF report** of the analytics, branded with the woodyouloveit.com logo and website ([sample](docs/sample_report.pdf))
+- **Tank analytics**: level history, motor run time (fill detection), time to fill, water used per day and by hour, night leak check
 - **Connectivity log** saved in flash: restarts and their cause, Wi-Fi and hotspot events, sensor faults, health checks
 - Settings saved in flash, kept after restarts and power cuts
 - LEDs keep showing the level while the setup hotspot is open
@@ -45,14 +54,30 @@ One sketch runs on both **ESP32 DevKit V1 (30-pin)** and **NodeMCU ESP8266 (30-p
 | Connection | ESP32 DevKit | NodeMCU ESP8266 | Notes |
 |---|---|---|---|
 | LED strip DIN | G16 | D2 (GPIO4) | Through the 330Ω resistor |
-| Sensor TRIG | G17 | D5 (GPIO14) | Direct |
-| Sensor ECHO | G18 | D6 (GPIO12) | Through the 1k/2k divider |
+| Sensor TRIG (AJ-SR04M RX) | D15 | D5 (GPIO14) | Direct |
+| Sensor ECHO (AJ-SR04M TX) | D2 | D6 (GPIO12) | ESP32: direct, sensor on 3V3. ESP8266: 1k/2k divider, or direct with the sensor on 3V3 |
+| Sensor power | 3V3 | VIN or 3V3 | ESP32: 3V3 only, see below |
 | +5V | VIN | VIN | From the 5V supply |
 | GND | GND | GND | All grounds connected together |
 
 ### ESP32 DevKit V1 (30-pin)
 
+On the ESP32 the sensor uses four neighbouring pins, **3V3 · GND · D15 · D2**, so one 4-pin connector or a short row of jumper wires does the job:
+
+| ESP32 pin | AJ-SR04M pin |
+|---|---|
+| 3V3 | 5V (runs fine on 3.3V) |
+| GND | GND |
+| D15 | RX (TRIG) |
+| D2 | TX (ECHO) |
+
 ![ESP32 wiring diagram](docs/wiring_esp32.svg)
+
+> **Keep D15 = TRIG and D2 = ECHO, and power the sensor from 3V3.** D15 and D2 are boot "strapping" pins that the ESP32 reads at start-up.
+> D2 must be LOW while uploading over USB. The sensor's echo output rests LOW, so uploads work. The sensor's RX input could hold D2 HIGH, so swapping the two wires can make uploads fail.
+> With the sensor on 3V3, the echo is 3.3V and needs no divider. Powering the sensor from 5V would put 5V into D2.
+> If your board has a blue LED on D2, it will flicker with each measurement. That's normal.
+> If an upload ever fails with "wrong boot mode", unplug the sensor connector, upload, and plug it back in.
 
 ### NodeMCU ESP8266 (30-pin)
 
@@ -93,11 +118,12 @@ The AJ-SR04M is rated for 3.0–5.5V. Powered from the NodeMCU's 3V3 pin, its ec
 
 ## First-time Wi-Fi setup
 
-1. Power the device. With no home Wi-Fi saved, it opens the hotspot **YUCCA TANK WATER LEVEL** and the top LED blinks blue.
+1. Power the device. With no home Wi-Fi saved, it opens the hotspot **WTMS-XXXX** (XXXX is unique to each board) and the top LED blinks blue.
 2. Connect your phone or laptop to that hotspot. The dashboard opens automatically.
    If it doesn't, open a browser and go to `http://192.168.4.1`.
 3. In **Wi-Fi settings**, press **Scan**, pick your network, enter the password and press **Connect**.
-4. The dashboard shows the new address (`http://yucca-tank.local` or the IP). The hotspot turns off 30 seconds later.
+4. The dashboard shows the new address (`http://watertank-xxxx.local` or the IP). The hotspot turns off 30 seconds later.
+5. In **Site details**, enter the society or organisation, building and tank names, save, and restart the device (see below).
    Switch your phone or PC back to your home Wi-Fi and open that address.
 
 If the device can't reach your home Wi-Fi (router off, wrong password, moved too far), the hotspot turns back on automatically.
@@ -105,11 +131,37 @@ The device retries your home network every minute while nobody is connected to t
 
 No home Wi-Fi at the tank? Just leave it on the hotspot and use `http://192.168.4.1`.
 
+## Site details (society, building, tank)
+
+Every device is named in the **Site details** card on the Overview tab:
+
+| Field | Example | Max length |
+|---|---|---|
+| Society / organisation | Green Park Co-op Housing Society | 48 |
+| Building | YUCCA | 32 |
+| Tank | Overhead Tank 1 | 32 |
+
+The names are used:
+- **on the dashboard:** header ("YUCCA · Overhead Tank 1", with the society underneath), browser tab title and footer
+- **in the PDF report:** site title, a details table, page headers, document properties and the file name, e.g. `wtms-report-yucca-overhead-tank-1-20260930.pdf`
+- **in the downloaded connectivity log** header and file name
+
+The **hotspot name** and **web address** are made from the building and tank names, so several tanks in one society don't clash:
+
+| Site details | Hotspot name | Web address |
+|---|---|---|
+| Not set | `WTMS-3F2A` (from the chip ID) | `http://watertank-3f2a.local` |
+| YUCCA / Overhead Tank 1 | `WTMS YUCCA Overhead Tank 1` | `http://tank-yucca-overhead-tank-1.local` |
+| Tower A / Tank #2 (Sump) | `WTMS Tower A Tank #2 (Sump)` | `http://tank-tower-a-tank-2-sump.local` |
+
+The card previews both before you save. They take effect after **Restart device**. Hotspot names are cut to 32 characters (a Wi-Fi limit), so keep building and tank names short.
+WTMS stands for Water Tanks Monitor System.
+
 ## Dashboard
 
 Open the dashboard from any device on the same network:
 
-- `http://yucca-tank.local` (Windows, macOS, iOS, Linux; some Android phones don't support `.local`)
+- `http://<web address>.local`, shown in **Site details** (Windows, macOS, iOS, Linux; some Android phones don't support `.local`)
 - or the device's IP address, shown in Serial Monitor and in your router's device list
 
 | Desktop | Mobile |
@@ -162,6 +214,53 @@ LED color = its position on the strip: bottom red → middle yellow → top gree
 
 The sensor is read every 70ms and the median of the last 7 readings is used. The level is then blended with the previous value so the bar moves smoothly. Ten misses in a row show the sensor fault blink.
 
+## Tank analytics
+
+The **Analytics** tab turns the level history into answers about your tank. The device records the level every 2 minutes in flash (14 days)
+and detects fills itself from 10-second samples. The charts are calculated in your browser, in your local time.
+
+| Section | What it shows |
+|---|---|
+| Summary tiles | Level now (or **Filling** with rise speed and time until full), last fill, how long empty → full takes, motor time today, water used today, busiest hour, last night's leak check |
+| Level history | 24 h / 3 / 7 / 14 days, with fills (motor on) and the night check window shaded. Hover or tap for exact values. |
+| Motor run time per day | Total filling time for the last 7 days, and the 5 most recent fills with duration and amount |
+| Water used per day | Level drops outside fills, for the last 7 days |
+| Usage by hour of day | Average use for each hour, busiest 3 hours highlighted |
+| Night leak check | Level change in a quiet window (default 01:00–05:00) for the last 7 nights |
+
+**How it decides**
+- **Filling / motor on:** the level rises faster than the fill threshold (default 0.5 cm/min) by at least 1.5 cm. Filling ends when the rise slows down or the tank is full. Fills shorter than 3 minutes or 3 cm are ignored. The device assumes every fill is the motor.
+- **Water used:** every drop in level outside a fill, with a small dead band so sensor noise isn't counted as use.
+- **Night leak check:**
+  - **Possible leak:** the level drops by more than the limit (default 1.5 cm) slowly and steadily, with no fill running.
+  - **Water used (one drop):** most of the drop happened within one hour, like a tap or a flush.
+  - **Watch:** the drop is between half the limit and the limit.
+  - A leak warning for last night also shows on the Overview tab.
+
+**Analytics settings** (bottom of the Analytics tab)
+- **Tank capacity (litres):** optional. With it, amounts show in litres; without it, in %. This assumes straight tank walls, so the litres are approximate for tapered tanks.
+- **Fill detection threshold:** lower it if slow fills are missed, raise it if you see false fills.
+- **Night check window and leak limit:** pick hours when nobody normally uses water.
+- **Clear history** erases the recorded levels and fills.
+
+History needs the real time. That comes from the internet on home Wi-Fi, or from your browser when you open the dashboard on the hotspot.
+Distances are stored rather than %, so re-calibrating later also corrects old history.
+
+| Desktop | Mobile |
+|---|---|
+| ![Analytics on desktop](docs/analytics_desktop.png) | ![Analytics on mobile](docs/analytics_mobile.png) |
+
+### PDF report
+
+In the **Analytics** tab, press **Download PDF report**. The report is created in your browser (it works offline on the hotspot too) and covers the last 7 days:
+
+- **Page 1:** woodyouloveit.com logo and website, report date and period, device and tank details, summary tiles, 7-day level history chart, motor run time and water used per day
+- **Page 2:** usage by hour of day, night leak check table, recent fills, how the numbers are calculated
+- **Every page:** © 2026 Chanchal Sakarde. All Rights Reserved., woodyouloveit.com, page number, and the GPL-3.0 source link
+
+See the [sample report](docs/sample_report.pdf) (made from simulated data).
+If you opened the dashboard from the hotspot's pop-up window, open `http://192.168.4.1` in your normal browser first. Some pop-up windows don't allow downloads.
+
 ## Connectivity log
 
 The device records events in flash, so they survive restarts and power cuts (about 300–400 events, oldest dropped first).
@@ -193,7 +292,7 @@ Before that, events show as `Boot #N +h:mm:ss` (time since that start).
 | Display | Meaning |
 |---|---|
 | Red → green sweep at power-up | Startup test |
-| Top LED blinking blue | Hotspot "YUCCA TANK WATER LEVEL" is on |
+| Top LED blinking blue | The device's hotspot is on |
 | Bar from the bottom | Current water level |
 | Bottom 3 LEDs blinking red | Water below 10% |
 | Bottom LED blinking blue | No echo from the sensor. Check the wiring, the divider and the probe position. |
@@ -212,9 +311,32 @@ Before that, events show as `Boot #N +h:mm:ss` (time since that start).
 | Hotspot connects but the page never loads | Type `http://192.168.4.1` exactly (with `http://`). Other sites and `https://` addresses can't be redirected. On a phone, turn off mobile data while setting up. Check Serial Monitor: repeating `Boot #` lines mean the board keeps restarting. |
 | Hotspot disappears | Open the **Connectivity log**. See "Reading a hotspot disappears problem" above. |
 | Device card says "Log storage: Memory only" | On ESP8266, select **Tools → Flash Size → 4MB (FS:2MB OTA:~1019KB)** and upload again. |
-| `yucca-tank.local` doesn't open | Use the IP address instead. Some Android phones don't support `.local` names. |
+| The `.local` address doesn't open | Use the IP address instead. Some Android phones don't support `.local` names. |
 | Dashboard unreachable after changing the router | Wait about 20 seconds: the hotspot turns on by itself. Connect to it and choose the new network in Wi-Fi settings. |
 | ESP8266 won't boot with the circuit connected | Make sure nothing is connected to D3, D4 or D8 |
+
+## Branding
+
+The woodyouloveit.com brand appears on:
+
+- the dashboard (logo bar, page title, footer with copyright and website, heart icon in the browser tab)
+- the PDF report (logo, website and copyright on every page, and in the document properties)
+- the downloaded connectivity log, the Serial Monitor start-up message, and the wiring diagrams
+- the header of every source file
+
+The logo is built into the firmware (`dashboard_html.h`), so it shows even without internet. The original is in `docs/logo.png`.
+
+## License
+
+Copyright (C) 2026 Chanchal Sakarde, [woodyouloveit.com](https://woodyouloveit.com). All Rights Reserved, except as granted by the license below.
+
+This project is free software: you can redistribute it and/or modify it under the terms of the
+**GNU General Public License** as published by the Free Software Foundation, either version 3 of the License,
+or (at your option) any later version. It is distributed in the hope that it will be useful, but **without any warranty**.
+See [LICENSE](LICENSE) for the full text.
+
+Every source file carries this notice and `SPDX-License-Identifier: GPL-3.0-or-later`.
+If you share a modified version, keep the copyright notices and publish your source code under the same license.
 
 ## Project structure
 
@@ -223,16 +345,22 @@ water-level-indicator/
 ├── water_level_indicator/
 │   ├── water_level_indicator.ino   # Sketch for ESP32 and ESP8266
 │   ├── dashboard_html.h            # Web dashboard page (HTML/CSS/JS)
-│   └── event_log.h                 # Connectivity log stored in flash (LittleFS)
+│   ├── event_log.h                 # Connectivity log stored in flash (LittleFS)
+│   └── history.h                   # Level history and fill (motor) detection
 ├── docs/
 │   ├── wiring_esp32.svg            # ESP32 wiring diagram
 │   ├── wiring_esp8266.svg          # NodeMCU wiring diagram
 │   ├── wiring_esp8266_3v3.svg      # NodeMCU, sensor on 3.3V, no divider
 │   ├── wiring_*.png                # PNG versions of the diagrams
 │   ├── dashboard_*.png             # Dashboard screenshots
-│   └── gen_diagrams.py             # Regenerates the diagrams
+│   ├── analytics_*.png             # Analytics screenshots
+│   ├── logo.png                    # woodyouloveit.com logo
+│   └── sample_report.pdf           # Example PDF report (simulated data)
 ├── CHANGELOG.md
+├── LICENSE                         # GNU General Public License v3
 ├── README.md
 └── .gitignore
 ```
+
+
 

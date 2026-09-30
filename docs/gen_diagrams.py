@@ -1,3 +1,23 @@
+# Water Tanks Monitor System - wiring diagram generator
+# woodyouloveit.com
+# Copyright (C) 2026 Chanchal Sakarde. All Rights Reserved, except as granted by the license below.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# Source: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Generate wiring diagrams (SVG) for ESP32 DevKit 30-pin and NodeMCU ESP8266 30-pin."""
 
 C_3V3 = "#6a1b9a"
@@ -5,7 +25,20 @@ C_5V, C_GND, C_TRIG, C_ECHO, C_DIN = "#d32f2f", "#333333", "#ef6c00", "#1565c0",
 FONT = "font-family='Segoe UI,Helvetica,Arial,sans-serif'"
 MONO = "font-family='Consolas,Menlo,monospace'"
 
-BX0, BX1, BY0, BY1 = 140, 340, 90, 520          # board rectangle
+BX0, BX1, BY0, BY1 = 140, 340, 90, 520
+
+# Brand logo embedded in every diagram (docs/logo.png, resized)
+def _load_logo():
+    import base64, io, os
+    try:
+        from PIL import Image
+        im = Image.open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo.png")).convert("RGBA")
+        im = im.resize((400, round(400 * im.height / im.width)), Image.LANCZOS)
+        buf = io.BytesIO(); im.save(buf, "PNG", optimize=True)
+        return base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        return ""
+LOGO_B64 = _load_logo()          # board rectangle
 def pin_y(i): return 120 + 26 * i                 # i = 0..14
 
 
@@ -67,9 +100,12 @@ class Svg:
         self.text(x, y + 4, s, 11, anchor, "bold", "#333", mono=True)
 
     def out(self):
-        head = (f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 {self.w} {self.h}' "
-                f"width='{self.w}' height='{self.h}'>"
+        head = (f"<svg xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' "
+                f"viewBox='0 0 {self.w} {self.h}' width='{self.w}' height='{self.h}'>"
                 f"<rect width='100%' height='100%' fill='#ffffff'/>")
+        if LOGO_B64:   # brand logo, top right
+            head += (f"<image x='{self.w - 222}' y='16' width='200' height='33' "
+                     f"href='data:image/png;base64,{LOGO_B64}' xlink:href='data:image/png;base64,{LOGO_B64}'/>")
         return head + "".join(self.p) + "</svg>"
 
 
@@ -103,6 +139,8 @@ def legend(s, y, items=None):
         x += 110
     s.text(40, y + 26, "Symbols with the same name (+5V / ground) are connected together. "
            "Pin order can differ on clone boards: always check the silkscreen.", 11, fill="#555")
+    s.text(40, y + 50, "woodyouloveit.com", 12, weight="bold", fill="#e7004e")
+    s.text(192, y + 50, "\u00a9 2026 Chanchal Sakarde. All Rights Reserved. Open source under GPL-3.0.", 11, fill="#333")
 
 
 def sensor_block(s, x, y, echo_y, trig_y):
@@ -164,40 +202,54 @@ def board_power(s, vin_i, gnd_i):
 
 
 def esp32():
-    s = Svg(1000, 610)
+    s = Svg(1000, 636)
     s.text(40, 40, "Water level indicator: ESP32 DevKit V1 (30-pin)", 20, weight="bold")
-    s.text(40, 62, "Sketch pins: LED G16, TRIG G17, ECHO G18", 13, fill="#555")
+    s.text(40, 62, "Sensor on 3V3 · GND · D15 · D2 (one 4-pin connector) · LED strip G16", 13, fill="#555")
     left = ["EN", "VP 36", "VN 39", "D34", "D35", "D32", "D33", "D25", "D26", "D27",
             "D14", "D12", "D13", "GND", "VIN"]
     right = ["D23", "D22", "TX0", "RX0", "D21", "D19", "D18", "D5", "TX2 17", "RX2 16",
              "D4", "D2", "D15", "GND", "3V3"]
-    used = {"L14": C_5V, "R13": C_GND, "R6": C_ECHO, "R8": C_TRIG, "R9": C_DIN}
+    used = {"L14": C_5V, "R9": C_DIN, "R11": C_ECHO, "R12": C_TRIG, "R13": C_GND, "R14": C_3V3}
     draw_board(s, "ESP32", "DevKit V1 · 30-pin", left, right, used)
-    board_power(s, 14, 13)
+    # VIN from the 5V supply
+    y = pin_y(14)
+    s.wire([(BX0, y), (BX0 - 50, y), (BX0 - 50, y - 16)], C_5V); s.v5(BX0 - 50, y - 16)
 
-    sx, sy, echo_y, trig_y = 640, 160, 196, 244
-    sensor_block(s, sx, sy, echo_y, trig_y)
-    # ECHO: G18 -> up -> node -> 1k -> sensor ; 2k from node to GND
-    g18 = pin_y(6)
-    s.wire([(BX1, g18), (440, g18), (440, echo_y), (560, echo_y)], C_ECHO)
-    s.resistor_h(560, sx, echo_y, C_ECHO, "1kΩ")
-    s.dot(500, echo_y, C_ECHO)
-    s.resistor_v(500, echo_y, 286, C_ECHO, "2kΩ"); s.gnd(500, 286)
-    # TRIG: G17 -> sensor
-    g17 = pin_y(8)
-    s.wire([(BX1, g17), (540, g17), (540, trig_y), (sx, trig_y)], C_TRIG)
-    # LED: G16 -> 330R -> DIN
+    # Sensor: four straight wires from the four neighbouring pins
+    sx, w = 640, 200
+    ys = {"echo": pin_y(11), "trig": pin_y(12), "gnd": pin_y(13), "vcc": pin_y(14)}
+    top, bot = ys["echo"] - 30, ys["vcc"] + 24
+    s.box(sx, top, w, bot - top, "AJ-SR04M", "SR04M-2 board", fill="#f3e5f5", stroke="#6a1b9a")
+    for key, lab, col in (("echo", "TX = ECHO", C_ECHO), ("trig", "RX = TRIG", C_TRIG),
+                          ("gnd", "GND", C_GND), ("vcc", "5V pin", C_3V3)):
+        s.wire([(BX1, ys[key]), (sx, ys[key])], col)
+        s.pin_label(sx + 8, ys[key], lab)
+    s.text(470, ys["vcc"] - 7, "3.3V", 12, "middle", "bold", C_3V3)
+    s.wire([(sx + 160, bot), (sx + 160, bot + 12)], C_GND); s.gnd(sx + 160, bot + 12)   # common ground
+    s.wire([(sx + w, (top + bot) / 2), (sx + w + 40, (top + bot) / 2)], "#555", 3)
+    s.add(f"<circle cx='{sx+w+62}' cy='{(top+bot)/2}' r='22' fill='#212121' stroke='#555' stroke-width='2'/>")
+    s.add(f"<circle cx='{sx+w+62}' cy='{(top+bot)/2}' r='12' fill='#616161'/>")
+    s.text(sx + w + 62, (top + bot) / 2 + 40, "probe", 11, "middle", fill="#555")
+    # Note about strapping pins
+    s.add("<rect x='372' y='500' width='262' height='56' rx='6' fill='#fff3e0' stroke='#e65100' stroke-width='1.5'/>")
+    s.text(503, 519, "Sensor 5V pin → ESP32 3V3 only", 12, "middle", "bold", "#e65100")
+    s.text(503, 535, "D15 = TRIG and D2 = ECHO, not swapped:", 11, "middle", fill="#e65100")
+    s.text(503, 549, "D2 must be LOW while uploading", 11, "middle", fill="#e65100")
+
+    # LED strip: G16 -> 330R -> DIN
     g16 = pin_y(9)
-    led_block(s, sx, 330 + 4, g16 + 20)
-    s.wire([(BX1, g16), (480, g16), (480, g16 + 20), (560, g16 + 20)], C_DIN)
-    s.resistor_h(560, sx, g16 + 20, C_DIN, "330Ω")
-    power_block(s, sx + 40, 470)
-    legend(s, 580 - 10)
+    din = 150
+    led_block(s, sx, din - 36, din)
+    s.wire([(BX1, g16), (470, g16), (470, din), (560, din)], C_DIN)
+    s.resistor_h(560, sx, din, C_DIN, "330Ω")
+    power_block(s, sx + 40, 250)
+    legend(s, 570, [("+5V", C_5V), ("3.3V", C_3V3), ("GND", C_GND), ("TRIG", C_TRIG),
+                    ("ECHO", C_ECHO), ("LED data", C_DIN)])
     return s.out()
 
 
 def esp8266():
-    s = Svg(1000, 610)
+    s = Svg(1000, 636)
     s.text(40, 40, "Water level indicator: NodeMCU ESP8266 (30-pin)", 20, weight="bold")
     s.text(40, 62, "Sketch pins: LED D2 (GPIO4), TRIG D5 (GPIO14), ECHO D6 (GPIO12)", 13, fill="#555")
     left = ["A0", "RSV", "RSV", "SD3", "SD2", "SD1", "CMD", "SD0", "CLK", "GND",
@@ -229,7 +281,7 @@ def esp8266():
 
 def esp8266_3v3():
     """NodeMCU with AJ-SR04M powered from 3.3V: ECHO wired directly, no divider."""
-    s = Svg(1000, 610)
+    s = Svg(1000, 636)
     s.text(40, 40, "NodeMCU ESP8266 + AJ-SR04M on 3.3V (no divider)", 20, weight="bold")
     s.text(40, 62, "LED D2 (GPIO4)  ·  sensor RX = TRIG from D5 (GPIO14)  ·  sensor TX = ECHO to D6 (GPIO12)",
            13, fill="#555")

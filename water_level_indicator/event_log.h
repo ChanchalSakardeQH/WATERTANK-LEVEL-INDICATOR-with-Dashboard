@@ -1,3 +1,25 @@
+/*
+  Water Tanks Monitor System - connectivity log stored in flash
+  woodyouloveit.com
+  Copyright (C) 2026 Chanchal Sakarde. All Rights Reserved, except as granted by the license below.
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+  Source: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard
+  SPDX-License-Identifier: GPL-3.0-or-later
+*/
+
 // Persistent event log for debugging connectivity.
 // Lines are stored in flash (LittleFS) so they survive restarts and power cuts:
 //   boot <TAB> uptime_s <TAB> unix_time(0=unknown) <TAB> level(I/W/E) <TAB> category <TAB> message
@@ -76,29 +98,37 @@ size_t fileSize(const char* path) {
   return s;
 }
 
-// Streams the whole log (older file first) without building it in RAM
+// Streams files one after another (older first) without building them in RAM. Binary-safe.
 template <class Server>
-void logStream(Server& server, bool download) {
-  size_t total = logFsOK ? fileSize(LOG_OLD) + fileSize(LOG_FILE) : logRam.length();
+void streamFiles(Server& server, const char* const* files, int nFiles, const char* type, const char* downloadName) {
+  size_t total = 0;
+  for (int i = 0; i < nFiles; i++) total += fileSize(files[i]);
   server.sendHeader("Cache-Control", "no-store");
-  if (download) server.sendHeader("Content-Disposition", "attachment; filename=\"yucca-tank-log.txt\"");
+  if (downloadName) server.sendHeader("Content-Disposition", String("attachment; filename=\"") + downloadName + "\"");
   server.setContentLength(total);
-  server.send(200, "text/plain", "");
-  if (!logFsOK) {
-    if (total) server.sendContent(logRam);
-    return;
-  }
-  const char* files[] = {LOG_OLD, LOG_FILE};
-  char buf[513];
-  for (const char* path : files) {
-    if (!LittleFS.exists(path)) continue;
-    File f = LittleFS.open(path, "r");
+  server.send(200, type, "");
+  char buf[512];
+  for (int i = 0; i < nFiles; i++) {
+    if (!LittleFS.exists(files[i])) continue;
+    File f = LittleFS.open(files[i], "r");
     if (!f) continue;
     while (f.available()) {
-      size_t n = f.readBytes(buf, 512);
-      buf[n] = 0;
-      server.sendContent(String(buf));
+      size_t n = f.readBytes(buf, sizeof(buf));
+      if (!n) break;
+      server.sendContent(buf, n);
     }
     f.close();
   }
+}
+
+template <class Server>
+void logStream(Server& server, bool download) {
+  const char* name = download ? "wtms-log.txt" : nullptr;
+  if (!logFsOK) {
+    server.sendHeader("Cache-Control", "no-store");
+    server.send(200, "text/plain", logRam);
+    return;
+  }
+  const char* files[] = {LOG_OLD, LOG_FILE};
+  streamFiles(server, files, 2, "text/plain", name);
 }
