@@ -14,6 +14,9 @@ One sketch runs on both **ESP32 DevKit V1 (30-pin)** and **NodeMCU ESP8266 (30-p
 ## Features
 
 - **Web dashboard** for desktop and mobile browsers: live level, calibration, display settings, Wi-Fi settings
+- **Usage & tank setup**: Domestic or Commercial, tank location (overhead, loft/bathroom, underground sump), shape and size, with loft tank presets and recommended settings for each
+- **Calibration without emptying the tank**: slide to how full the tank is now, or enter measurements. The water depth does the rest.
+- **Power saving for production** (default): CPU 80 MHz, fewer sensor reads, LED updates only on change, Wi-Fi power saving, adjustable transmit power, and an on-demand hotspot using the BOOT button
 - **Site details**: name each device by society or organisation, building and tank. The names appear on the dashboard, PDF reports and logs, and give every tank its own hotspot name and web address.
 - **Wi-Fi setup hotspot** ("WTMS-XXXX", or "WTMS <building> <tank>" once named): connect and the dashboard opens automatically (captive portal)
 - **Wi-Fi settings in the dashboard**: scan, connect, forget. The hotspot comes back by itself if home Wi-Fi is unreachable.
@@ -114,7 +117,23 @@ The AJ-SR04M is rated for 3.0–5.5V. Powered from the NodeMCU's 3V3 pin, its ec
 5. Select the board in **Tools → Board**:
    - ESP32: **ESP32 Dev Module**
    - ESP8266: **NodeMCU 1.0 (ESP-12E Module)**, with **Flash Size: 4MB (FS:2MB OTA:~1019KB)** so the log can be saved in flash
-6. Upload, then open Serial Monitor at **115200 baud**. The first line shows the firmware version and board.
+6. Check the **Tools** settings below, upload, then open Serial Monitor at **115200 baud**. The first line shows the firmware version and board.
+
+**Tools settings (ESP32 Dev Module)**
+
+| Setting | Use | Why |
+|---|---|---|
+| Erase All Flash Before Sketch Upload | **Disabled** | Enabled wipes Wi-Fi, site details, tank setup, calibration, history and logs on every upload |
+| Partition Scheme | Default 4MB with spiffs (1.2MB APP / 1.5MB SPIFFS) | The log and history are stored in the "spiffs" area (used by LittleFS) |
+| CPU Frequency | 240MHz or 80MHz | Either is fine. In power saving mode the firmware switches to 80 MHz itself. |
+| Core Debug Level | None | Keeps the Serial Monitor readable |
+| Upload Speed | 921600 | Lower it to 115200 if uploads fail |
+
+**Tools settings (NodeMCU 1.0)**: Flash Size **4MB (FS:2MB OTA:~1019KB)**, Erase Flash **Only Sketch**.
+
+After the very first upload, or after an upload with erase enabled, the flash storage is blank. The firmware formats it by itself and logs
+"Flash storage was blank and has been formatted", and the boot counter starts at #1. That's normal.
+Settings then need to be entered once in the dashboard.
 
 ## First-time Wi-Fi setup
 
@@ -137,7 +156,7 @@ Every device is named in the **Site details** card on the Overview tab:
 
 | Field | Example | Max length |
 |---|---|---|
-| Society / organisation | Green Park Co-op Housing Society | 48 |
+| Society / organisation | NYATI | 48 |
 | Building | YUCCA | 32 |
 | Tank | Overhead Tank 1 | 32 |
 
@@ -168,14 +187,21 @@ Open the dashboard from any device on the same network:
 |---|---|
 | ![Dashboard on desktop](docs/dashboard_desktop.png) | ![Dashboard on mobile](docs/dashboard_mobile.png) |
 
-| Card | What it does |
+![Setup tab](docs/setup_desktop.png)
+
+The dashboard has four tabs: **Overview**, **Analytics**, **Setup** and **Log**.
+
+| Tab · card | What it does |
 |---|---|
-| Water level | Live level, tank graphic and LED strip preview. Shows sensor fault and low water alerts. |
-| Calibration | Live sensor reading, one-tap EMPTY / FULL buttons, or type both distances |
-| Display & sensor | LED brightness, low water alarm, strip direction, color mode, trigger pulse. **Defaults** restores factory settings. |
-| Wi-Fi settings | Saved network, status, signal, home address and hotspot state. **Scan** lists nearby networks, **Connect** joins one (saved only if it works), **Forget Wi-Fi** erases the saved network. |
-| Device | Board, firmware, uptime, cause of the last restart, boot count, free memory, supply voltage (ESP8266), **Restart device**. |
-| Connectivity log | Every restart, Wi-Fi and hotspot event with time, filters, **Download** and **Clear**. See below. |
+| Overview · Water level | Live level in % and litres, tank graphic and LED strip preview. Shows sensor fault, low water, filling and leak alerts. |
+| Overview · Tank at a glance | Water now, space left, capacity, site, usage, tank size, water depth, calibrated range, litres per cm, and setup warnings |
+| Setup · Usage & tank | Domestic / Commercial, location, shape, size (loft presets or custom), water depth, capacity, **Recommended settings** |
+| Setup · Calibration | Current-level slider, calibration from measurements, EMPTY / FULL buttons, manual distances |
+| Setup · Site details | Society / organisation, building and tank names |
+| Setup · Display & sensor | LED brightness, low water alarm, strip direction, color mode, trigger pulse. **Defaults** restores factory settings. |
+| Setup · Wi-Fi settings | Saved network, status, signal, home address and hotspot state. **Scan** lists nearby networks, **Connect** joins one (saved only if it works), **Forget Wi-Fi** erases the saved network. |
+| Setup · Device | Board, firmware, uptime, cause of the last restart, boot count, free memory, supply voltage (ESP8266), **Restart device**. |
+| Log | Every restart, Wi-Fi and hotspot event with time, filters, **Download** and **Clear**. See below. |
 
 ## Configuration
 
@@ -196,13 +222,54 @@ Fixed in the sketch: `MAX_VALID_CM` (450), readings above it are treated as "no 
 
 The pin numbers for each board are in the `#if defined(ESP32)` / `#elif defined(ESP8266)` block.
 
-### Calibration
+### Usage & tank (Setup tab)
 
-1. Mount the sensor at the top of the tank, pointing straight down, with no pipes or walls in its beam.
-2. Open the dashboard. When the tank is empty, press **Tank is EMPTY now**. When it's full, press **Tank is FULL now**.
-3. If you can't wait for the tank to empty or fill, measure the distances from the sensor face to the bottom and to the full line, type them in and press **Save distances**.
+| Setting | Options | What it changes |
+|---|---|---|
+| Usage | Domestic, Commercial | Recommended night leak window and low water alarm; shown in reports |
+| Tank location | Overhead (roof), Loft / bathroom, Underground sump, Other | Mounting tips and recommended low water alarm |
+| Tank shape | Rectangular (box, loft), Vertical cylinder | Which dimensions are asked and how capacity is estimated |
+| Tank size | Loft presets or custom length × width × height / diameter × height (mm) | Tank details in the dashboard and reports |
+| Water depth when full | mm, tank bottom to the overflow pipe | Used by the calibration slider and measurement method |
+| Capacity | litres | Litres everywhere (level, analytics, reports) |
 
-The sensor must sit at least 20–25cm above the full water line.
+**Loft tank presets** (rated capacity, outer size in mm):
+
+| Capacity | Length | Width | Height | Water depth preset |
+|---|---|---|---|---|
+| 150 L | 710 | 710 | 400 | 360 |
+| 225 L | 1035 | 725 | 385 | 345 |
+| 270 L | 1100 | 735 | 425 | 385 |
+| 400 L | 1120 | 875 | 420 | 380 |
+| 500 L | 1450 | 915 | 445 | 405 |
+| 1000 L | 1650 | 1080 | 685 | 645 |
+
+The preset water depth is the tank height minus 40 mm. Measure your overflow pipe and correct it if needed.
+Outer dimensions overstate capacity by 3–26% (walls, ribs, sloped top), so the rated capacity is used for litres, not length × width × height.
+
+**Recommended settings** (button in Usage & tank, applied only when you confirm):
+
+| | Domestic | Commercial |
+|---|---|---|
+| Night leak check | 01:00–05:00 | 22:00–06:00 (after hours) |
+| Low water alarm | 15% (30% for a sump) | 25% (30% for a sump) |
+| Leak limit | 2% of the water depth, at least 1 cm | same |
+
+### Calibration (Setup tab)
+
+Pick whichever is easiest. All three give the same result: the sensor distance at **empty** and at **full**.
+
+1. **How full is the tank right now?** Set **Water depth when full** in Usage & tank, then slide to the current level (e.g. 70%) and save.
+   The firmware works out: empty = live reading + level × depth, full = empty − depth. No need to empty or fill the tank.
+2. **From measurements:** enter the distance from the sensor face to the full (overflow) water line. Empty = that distance + water depth.
+3. **Tank is EMPTY / FULL now** buttons, or type both distances.
+
+Each method previews the result and warns if the full water line is inside the sensor's blind zone.
+
+**Sensor blind zone, especially on loft tanks.** The AJ-SR04M / JSN-SR04T can't measure closer than about 20–25 cm.
+Loft tanks are only 385–685 mm tall, so a sensor mounted flat on the lid would miss the top half of the tank.
+Mount it on a **stand pipe at least 25 cm tall and 75 mm wide** over the manhole, so the full water line is 25 cm or more below the sensor face.
+On a shallow tank, 1 cm of water is about 2.5% of the tank (≈ 6 L in a 225 L loft tank). That's the resolution you can expect.
 
 ## How it works
 
@@ -213,6 +280,40 @@ LED color = its position on the strip: bottom red → middle yellow → top gree
 ```
 
 The sensor is read every 70ms and the median of the last 7 readings is used. The level is then blended with the previous value so the bar moves smoothly. Ten misses in a row show the sensor fault blink.
+
+## Power, heat and production use
+
+The ESP32 runs warm mainly because of the Wi-Fi radio. A hotspot can't use Wi-Fi power saving, and full transmit power is far more than a phone next to the tank needs.
+The **Power & radio** card (Setup tab) controls this:
+
+| Setting | Options | Default |
+|---|---|---|
+| Power saving (production mode) | on / off (performance) | **on** |
+| Hotspot | Automatic, On demand (BOOT button), Always on | Automatic |
+| Wi-Fi transmit power | Low 8.5 dBm, Medium 13 dBm, High 19.5 dBm | **Medium** |
+
+| | Power saving (default) | Performance |
+|---|---|---|
+| CPU (ESP32) | 80 MHz | 240 MHz |
+| Sensor reads | 2 per second | 14 per second |
+| LED strip | refreshed 4 times a second, only when something changed | 10 times a second |
+| Wi-Fi | modem sleep while the hotspot is off | always awake |
+| Main loop | pauses 5 ms per pass | pauses 1 ms per pass |
+| Serial output | log lines only | log lines + live distance every second |
+| Dashboard refresh | every 2 s | every second |
+
+**Hotspot modes**
+- **Automatic:** on while there's no home Wi-Fi or it can't be reached; off 30 s after home Wi-Fi connects.
+- **On demand:** best for installed devices. The hotspot stays off until someone presses the **BOOT** button on the ESP32 (the **FLASH** button on a NodeMCU). It turns off after 10 minutes without devices connected. With no home Wi-Fi saved it still starts for setup, and with no home Wi-Fi and no hotspot the radio is switched off completely.
+- **Always on:** only if you really need it. It uses the most power and runs warmest.
+
+The top LED blinks blue whenever the hotspot is on. Every change is recorded in the connectivity log.
+
+**Recommended production setup:** power saving on, hotspot on demand, transmit power Low or Medium (Medium if the router is in another room).
+
+**Other heat sources**
+- **The 3.3V regulator** next to the USB socket turns 5V into 3.3V for the ESP32 and the sensor. It gets warm, and that's normal. If it's too hot to touch, check for a short on 3V3 and make sure the LED strip is powered from the 5V supply, not through the board.
+- **The enclosure:** leave a few ventilation holes, and don't mount the board against the LED strip or in direct sun.
 
 ## Tank analytics
 
@@ -312,6 +413,10 @@ Before that, events show as `Boot #N +h:mm:ss` (time since that start).
 | Hotspot disappears | Open the **Connectivity log**. See "Reading a hotspot disappears problem" above. |
 | Device card says "Log storage: Memory only" | On ESP8266, select **Tools → Flash Size → 4MB (FS:2MB OTA:~1019KB)** and upload again. |
 | The `.local` address doesn't open | Use the IP address instead. Some Android phones don't support `.local` names. |
+| Serial shows `esp_littlefs ... Corrupted dir pair` or `mount failed (-84)` (firmware 2.8.0 and older) | The flash storage was blank, usually because **Erase All Flash Before Sketch Upload** is Enabled. The firmware formats it automatically. Set that option to Disabled so settings survive uploads. |
+| Settings, Wi-Fi or calibration lost after an upload | **Tools → Erase All Flash Before Sketch Upload** must be **Disabled** (ESP32), or **Erase Flash: Only Sketch** (NodeMCU). |
+| Hotspot doesn't appear | In on-demand mode it's off until you press **BOOT** (ESP32) or **FLASH** (NodeMCU). The top LED blinks blue when it's on. |
+| Board gets hot | Turn on **Power saving**, set the hotspot to **On demand**, and lower the transmit power. See "Power, heat and production use". |
 | Dashboard unreachable after changing the router | Wait about 20 seconds: the hotspot turns on by itself. Connect to it and choose the new network in Wi-Fi settings. |
 | ESP8266 won't boot with the circuit connected | Make sure nothing is connected to D3, D4 or D8 |
 
@@ -353,14 +458,22 @@ water-level-indicator/
 │   ├── wiring_esp8266_3v3.svg      # NodeMCU, sensor on 3.3V, no divider
 │   ├── wiring_*.png                # PNG versions of the diagrams
 │   ├── dashboard_*.png             # Dashboard screenshots
+│   ├── setup_desktop.png           # Setup tab screenshot
 │   ├── analytics_*.png             # Analytics screenshots
 │   ├── logo.png                    # woodyouloveit.com logo
-│   └── sample_report.pdf           # Example PDF report (simulated data)
+│   ├── sample_report.pdf           # Example PDF report (simulated data)
+│   └── gen_diagrams.py             # Regenerates the diagrams
+├── tools/
+│   └── sensor_diagnostic/          # Sensor wiring and mode test sketch
 ├── CHANGELOG.md
 ├── LICENSE                         # GNU General Public License v3
 ├── README.md
 └── .gitignore
 ```
 
+To regenerate the diagrams after editing `docs/gen_diagrams.py`:
 
-
+```bash
+pip install cairosvg
+python docs/gen_diagrams.py
+```

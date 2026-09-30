@@ -27,6 +27,9 @@
 #pragma once
 #include <Arduino.h>
 #include <LittleFS.h>
+#if defined(ESP32)
+#include <esp_log.h>
+#endif
 
 #define LOG_FILE      "/log.txt"
 #define LOG_OLD       "/log.old.txt"
@@ -43,10 +46,20 @@ void setClock(uint32_t epochNow) {
   logEpochBase = epochNow - millis() / 1000;
 }
 
+bool logFsFormatted = false;     // storage was blank or unreadable and has just been formatted
+
 void logBegin(uint32_t boot) {
   logBoot = boot;
 #if defined(ESP32)
-  logFsOK = LittleFS.begin(true);   // format on first use
+  // Blank flash (first upload, or "Erase All Flash Before Sketch Upload" enabled) is normal:
+  // hide the library's red mount errors, format, and report it once in our own log.
+  esp_log_level_set("esp_littlefs", ESP_LOG_NONE);
+  logFsOK = LittleFS.begin(false);
+  if (!logFsOK) {
+    logFsOK = LittleFS.begin(true);  // format and mount
+    logFsFormatted = logFsOK;
+  }
+  esp_log_level_set("esp_littlefs", ESP_LOG_WARN);
 #else
   logFsOK = LittleFS.begin();       // ESP8266 formats automatically if needed
 #endif

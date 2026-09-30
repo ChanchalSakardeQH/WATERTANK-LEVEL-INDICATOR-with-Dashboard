@@ -61,11 +61,13 @@ header small{display:block;opacity:.8;font-weight:400;font-size:12px}
 .chip i{width:8px;height:8px;border-radius:50%;background:#a7f3d0}
 .chip.bad i{background:#fca5a5}.chip.warn i{background:#fcd34d}
 main{max-width:1100px;margin:0 auto;padding:16px;display:grid;gap:16px;grid-template-columns:1fr}
-@media (min-width:860px){main{padding:24px}#tabOverview{grid-template-columns:380px 1fr;grid-template-areas:'ban ban' 'level cal' 'site disp' 'dev disp' 'wifi wifi';align-items:start}
+@media (min-width:860px){main{padding:24px}#tabOverview{grid-template-columns:380px 1fr;grid-template-areas:'ban ban' 'level glance';align-items:start}
 #tabAnalytics{grid-template-columns:1fr 1fr;grid-template-areas:'akpi akpi' 'achart achart' 'amotor ause' 'ahour anight' 'aset aset';align-items:start}
 #aKpi{grid-area:akpi}#aChart{grid-area:achart}#aMotor{grid-area:amotor}#aUse{grid-area:ause}#aHour{grid-area:ahour}#aNight{grid-area:anight}#aSet{grid-area:aset}
-#banners{grid-area:ban}#cSite{grid-area:site}
-#tabOverview:has(#banners[hidden]){grid-template-areas:'level cal' 'site disp' 'dev disp' 'wifi wifi'}#cLevel{grid-area:level}#cCal{grid-area:cal}#cDisp{grid-area:disp}#cWifi{grid-area:wifi}#cDev{grid-area:dev}}
+#banners{grid-area:ban}
+#tabOverview:has(#banners[hidden]){grid-template-areas:'level glance'}#cLevel{grid-area:level}#cGlance{grid-area:glance}
+#tabSetup{grid-template-columns:1fr 1fr;grid-template-areas:'prof cal' 'site cal' 'site disp' 'power disp' 'power dev' 'wifi wifi';align-items:start}
+#cProfile{grid-area:prof}#cPower{grid-area:power}#cCal{grid-area:cal}#cSite{grid-area:site}#cDisp{grid-area:disp}#cWifi{grid-area:wifi}#cDev{grid-area:dev}}
 .card{background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:18px}
 .card h2{font-size:15px;margin:0 0 14px;color:var(--muted);font-weight:600;letter-spacing:.02em}
 .hero{display:flex;gap:20px;align-items:stretch}
@@ -84,6 +86,17 @@ main{max-width:1100px;margin:0 auto;padding:16px;display:grid;gap:16px;grid-temp
 .live{display:flex;align-items:baseline;justify-content:space-between;padding:12px 14px;border-radius:10px;background:var(--input);margin-bottom:14px}
 .live b{font-size:26px}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}.row3[hidden],.row2[hidden]{display:none}
+.sel{width:100%;padding:11px 10px;font-size:16px;border:1px solid var(--line);border-radius:10px;background:var(--input);color:var(--text)}
+h3.sub{font-size:14px;margin:20px 0 6px;color:var(--text)}
+.slide{display:flex;align-items:center;gap:14px;margin:10px 0 6px}.slide input{flex:1;height:32px}.slide b{min-width:96px;text-align:right;font-size:18px}
+.calprev{font-size:13px;line-height:1.5;padding:10px 12px;border-radius:10px;background:var(--input);margin:6px 0 10px}
+.calprev.bad{background:rgba(220,38,38,.12);color:var(--danger)}.calprev.warn{background:rgba(217,119,6,.12);color:var(--warn)}
+.ro{padding:11px 12px;border:1px dashed var(--line);border-radius:10px;font-size:16px}
+.help a,.card p a{color:var(--accent);font-weight:600}
+.litres{font-size:15px;color:var(--muted);margin:-2px 0 8px;font-weight:600}
+.gstats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}.gstats .stat b{font-size:20px}
+.seg[id=segUsage]{margin-bottom:0}
 label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
 input[type=number],input[type=text],input[type=password]{width:100%;padding:11px 12px;font-size:16px;border:1px solid var(--line);border-radius:10px;background:var(--input);color:var(--text)}
 input[type=range]{width:100%;accent-color:var(--accent)}
@@ -176,13 +189,14 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
 <nav class="tabs" id="tabs">
   <button data-tab="overview" class="on">Overview</button>
   <button data-tab="analytics">Analytics</button>
+  <button data-tab="setup">Setup</button>
   <button data-tab="log">Log</button>
 </nav>
 
 <main id="tabOverview" class="tab">
   <div id="banners" style="display:grid;gap:12px">
-  <div class="banner" id="siteBanner">Name this tank: add the society or organisation, building and tank in <a href="#cSite">Site details</a>. The names appear on the dashboard and in reports.</div>
-  <div class="banner" id="setupBanner">Not connected to your home Wi-Fi yet. <a href="#cWifi">Set up Wi-Fi</a> to use the dashboard from your home network.</div>
+  <div class="banner" id="siteBanner">Name this tank: add the society or organisation, building and tank in <a href="#cSite">Setup → Site details</a>. The names appear on the dashboard and in reports.</div>
+  <div class="banner" id="setupBanner">Not connected to your home Wi-Fi yet. <a href="#cWifi">Set up Wi-Fi</a> in Setup to use the dashboard from your home network.</div>
   </div>
 
   <section class="card" id="cLevel">
@@ -192,6 +206,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
       <div class="leds" id="leds" title="LED strip preview"></div>
       <div style="flex:1;min-width:0">
         <div class="big"><span id="pct">--</span><small>%</small></div>
+        <div class="litres" id="litres"></div>
         <div class="kv">
           <span>Distance</span><b id="dist">-- cm</b>
           <span>Empty at</span><b id="kvEmpty">-- cm</b>
@@ -205,26 +220,99 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
     <div class="alert bad" id="alertLeak"></div>
   </section>
 
+  <section class="card" id="cGlance">
+    <h2>TANK AT A GLANCE</h2>
+    <div class="gstats">
+      <div class="stat"><b id="gWater">--</b>water now</div>
+      <div class="stat"><b id="gFree">--</b>space left</div>
+      <div class="stat"><b id="gCap">--</b>capacity</div>
+    </div>
+    <div class="kv" style="margin-top:0">
+      <span>Site</span><b id="gSite">--</b>
+      <span>Usage</span><b id="gUsage">--</b>
+      <span>Tank</span><b id="gTank">--</b>
+      <span>Water depth when full</span><b id="gDepth">--</b>
+      <span>Calibrated range</span><b id="gRange">--</b>
+      <span>Sensor to full water line</span><b id="gGap">--</b>
+      <span>1 cm of water</span><b id="gRes">--</b>
+    </div>
+    <div class="alert warn" id="gWarn"></div>
+    <p class="help" style="margin-top:12px"><a href="#setup">Change tank, usage and calibration in Setup</a></p>
+  </section>
+</main>
+
+<main id="tabSetup" class="tab" hidden>
+  <section class="card" id="cProfile">
+    <h2>USAGE &amp; TANK</h2>
+    <div class="field"><label>Usage</label>
+      <div class="seg" id="segUsage"><button data-v="0" class="on">Domestic</button><button data-v="1">Commercial</button></div></div>
+    <div class="row2">
+      <div class="field"><label for="inLoc">Tank location</label><select id="inLoc" class="sel">
+        <option value="0">Overhead (roof)</option><option value="1">Loft / bathroom</option>
+        <option value="2">Underground sump</option><option value="3">Other</option></select></div>
+      <div class="field"><label for="inShape">Tank shape</label><select id="inShape" class="sel">
+        <option value="0">Rectangular (box, loft)</option><option value="1">Vertical cylinder</option></select></div>
+    </div>
+    <div class="field"><label for="inPreset">Tank size</label><select id="inPreset" class="sel"></select></div>
+    <div class="row3" id="dimRect">
+      <div class="field"><label for="inLen">Length (mm)</label><input type="number" id="inLen" min="0" max="20000" inputmode="numeric"></div>
+      <div class="field"><label for="inWid">Width (mm)</label><input type="number" id="inWid" min="0" max="20000" inputmode="numeric"></div>
+      <div class="field"><label for="inHgt">Height (mm)</label><input type="number" id="inHgt" min="0" max="20000" inputmode="numeric"></div>
+    </div>
+    <div class="row2" id="dimCyl" hidden>
+      <div class="field"><label for="inDia">Diameter (mm)</label><input type="number" id="inDia" min="0" max="20000" inputmode="numeric"></div>
+      <div class="field"><label for="inHgtC">Height (mm)</label><input type="number" id="inHgtC" min="0" max="20000" inputmode="numeric"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label for="inDepth">Water depth when full (mm)</label><input type="number" id="inDepth" min="0" max="20000" inputmode="numeric">
+        <p class="help">Tank bottom to the overflow pipe: the highest the water gets.</p></div>
+      <div class="field"><label for="inCapP">Capacity (litres)</label><input type="number" id="inCapP" min="0" max="1000000" inputmode="numeric">
+        <p class="help" id="capHint"></p></div>
+    </div>
+    <div class="alert info" id="profTip"></div>
+    <div class="btns" style="margin-top:14px">
+      <button class="btn" onclick="saveProfile()">Save tank</button>
+      <button class="btn sec" onclick="applyRecommended()">Recommended settings</button>
+    </div>
+    <p class="help" id="recHelp"></p>
+  </section>
+
   <section class="card" id="cCal">
     <h2>CALIBRATION</h2>
     <div class="live"><span>Live sensor reading</span><b id="liveDist">-- cm</b></div>
-    <div class="btns">
-      <button class="btn" id="btnEmpty" onclick="calNow('empty')">Tank is EMPTY now</button>
-      <button class="btn" id="btnFull" onclick="calNow('full')">Tank is FULL now</button>
+
+    <h3 class="sub">1 · How full is the tank right now?</h3>
+    <p class="help">Slide to the current water level. With the water depth from <a href="#cProfile">Usage &amp; tank</a>,
+      the empty and full points are worked out from the live reading. No need to empty or fill the tank.</p>
+    <div class="slide"><input type="range" id="inNow" min="0" max="100" step="1" value="50"><b id="nowVal">50%</b></div>
+    <div class="calprev" id="prevSlider"></div>
+    <button class="btn" id="btnSlider" onclick="calSlider()">Save calibration from current level</button>
+
+    <h3 class="sub">2 · From measurements</h3>
+    <div class="row2">
+      <div class="field"><label for="inGap">Sensor face to full water line (cm)</label><input type="number" id="inGap" step="0.5" min="15" max="400" inputmode="decimal"></div>
+      <div class="field"><label>Water depth when full</label><div class="ro" id="depthShow">--</div></div>
     </div>
-    <p class="help">Quick calibration: when the tank is empty (or full), press the matching button to save the live reading.
-      Or type the distances from the sensor face to the water surface below.</p>
-    <div class="row2" style="margin-top:14px">
+    <div class="calprev" id="prevMeas"></div>
+    <button class="btn sec" id="btnMeas" onclick="calMeasured()">Save calibration from measurements</button>
+
+    <h3 class="sub">3 · Tank is empty or full right now</h3>
+    <div class="btns">
+      <button class="btn sec" id="btnEmpty" onclick="calNow('empty')">Tank is EMPTY now</button>
+      <button class="btn sec" id="btnFull" onclick="calNow('full')">Tank is FULL now</button>
+    </div>
+    <div class="row2" style="margin-top:4px">
       <div class="field"><label for="inEmpty">Empty distance (cm)</label><input type="number" id="inEmpty" step="0.5" min="20" max="450" inputmode="decimal"></div>
       <div class="field"><label for="inFull">Full distance (cm)</label><input type="number" id="inFull" step="0.5" min="15" max="440" inputmode="decimal"></div>
     </div>
     <button class="btn sec" onclick="calManual()">Save distances</button>
-    <p class="help">Keep the sensor at least 20–25 cm above the full water line. It can't measure closer than that.</p>
+    <p class="help">Now: empty at <b id="calNowE">--</b>, full at <b id="calNowF">--</b> from the sensor.
+      The sensor can't measure closer than about 20–25 cm, so the full water line must be at least that far below it.</p>
   </section>
 
   <section class="card" id="cSite">
     <h2>SITE DETAILS</h2>
-    <div class="field"><label for="inOrg">Society / organisation</label><input type="text" id="inOrg" maxlength="48" placeholder="e.g. Green Park Co-op Housing Society" autocomplete="organization"></div>
+    <div class="field"><label for="inOrg">Society / organisation</label><input type="text" id="inOrg" maxlength="48" placeholder="e.g. NYATI" autocomplete="organization"></div>
     <div class="row2">
       <div class="field"><label for="inBld">Building</label><input type="text" id="inBld" maxlength="32" placeholder="e.g. Tower A"></div>
       <div class="field"><label for="inTank">Tank</label><input type="text" id="inTank" maxlength="32" placeholder="e.g. Overhead Tank 1"></div>
@@ -258,6 +346,27 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
     </div>
   </section>
 
+  <section class="card" id="cPower">
+    <h2>POWER &amp; RADIO</h2>
+    <div class="toggle" style="border-top:none"><span>Power saving (production mode)<br><span class="help">CPU at 80 MHz (ESP32), sensor read twice a second,
+      LED strip refreshed only when it changes, Wi-Fi power saving while the hotspot is off. Recommended for installed devices.</span></span>
+      <label class="sw"><input type="checkbox" id="inEco"><i></i></label></div>
+    <div class="field" style="margin-top:10px"><label for="inApMode">Hotspot</label>
+      <select id="inApMode" class="sel"><option value="0">Automatic: on when home Wi-Fi is unavailable</option>
+        <option value="2">On demand: press BOOT to turn on, off after 10 min idle</option><option value="1">Always on</option></select>
+      <p class="help" id="apModeHelp"></p></div>
+    <div class="field"><label>Wi-Fi transmit power</label>
+      <div class="seg" id="segTx" style="margin-bottom:4px"><button data-v="2">Low</button><button data-v="0">Medium</button><button data-v="1">High</button></div>
+      <p class="help">Lower power means less heat and less interference. Use High only if the signal to the router or phone is weak.</p></div>
+    <div class="kv" style="margin-top:0">
+      <span>Mode now</span><b id="pMode">--</b>
+      <span>CPU</span><b id="pCpu">--</b>
+      <span>Transmit power</span><b id="pTx">--</b>
+      <span>Sensor reads</span><b id="pRate">--</b>
+    </div>
+    <div style="margin-top:14px"><button class="btn" onclick="savePower()">Save power settings</button></div>
+  </section>
+
   <section class="card" id="cWifi">
     <h2>WI-FI SETTINGS</h2>
     <div class="wgrid">
@@ -270,9 +379,9 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
           <span>Hotspot</span><b id="wAp">--</b>
         </div>
         <div class="alert" id="wMsg"></div>
-        <p class="help" style="margin-top:12px">The hotspot <b class="apName">--</b> turns on automatically whenever the device can't reach your home Wi-Fi, so you can always get back to this page at <b>http://192.168.4.1</b>.</p>
-        <div class="toggle" style="margin-top:6px;border-top:1px solid var(--line)"><span>Keep hotspot always on<br><span class="help">Otherwise it turns off 30 s after home Wi-Fi connects.</span></span>
-          <label class="sw"><input type="checkbox" id="inApAlways" onchange="setApAlways(this.checked)"><i></i></label></div>
+        <p class="help" style="margin-top:12px">The hotspot <b class="apName">--</b> lets you reach this page at <b>http://192.168.4.1</b> when the device isn't on your home Wi-Fi.
+          If it's off, press the <b>BOOT</b> button on the board to turn it on.</p>
+        <p class="help">Hotspot mode: <b id="wApMode">--</b>. <a href="#cPower">Change in Power &amp; radio</a>.</p>
       </div>
       <div>
         <div class="scanhead"><label>Available networks</label><button class="btn sec small" id="btnScan" onclick="scan()">Scan</button></div>
@@ -302,7 +411,6 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
     </div>
     <div style="margin-top:16px"><button class="btn sec" onclick="restartDev()">Restart device</button></div>
   </section>
-
 </main>
 
 <main id="tabAnalytics" class="tab" hidden>
@@ -436,6 +544,7 @@ function render(){
   const conn=w.state==='connected';
   $('setupBanner').classList.toggle('show',!w.saved&&w.state!=='connecting'&&!conn);
   renderSite();if(!siteLoaded)fillSite();
+  renderGlance();renderPower();if(!profLoaded)fillProfile();else if(tab==='setup')calPreview();
   $('banners').hidden=!document.querySelector('#banners .banner.show');
   $('wSaved').textContent=w.saved||'Not set';
   $('wState').textContent={connected:'Connected',connecting:'Connecting…',failed:'Not reachable',none:'Not set up'}[w.state];
@@ -461,6 +570,125 @@ function render(){
   if(s.filling)setAlert(fa,'info',`Filling (motor on) · rising ${s.fillRate.toFixed(1)} cm/min`+(s.fillEta>=0?` · full in about ${dur(s.fillEta)}`:''));
   else setAlert(fa,'','');
   if(!formLoaded)fillForm();
+}
+
+// ---- Usage & tank profile ----
+// Loft tank sizes (rated litres; outer length x width x height in mm)
+const PRESETS=[null,
+  {cap:150,l:710,w:710,h:400},{cap:225,l:1035,w:725,h:385},{cap:270,l:1100,w:735,h:425},
+  {cap:400,l:1120,w:875,h:420},{cap:500,l:1450,w:915,h:445},{cap:1000,l:1650,w:1080,h:685}];
+const USAGE=['Domestic','Commercial'],LOCS=['Overhead (roof)','Loft / bathroom','Underground sump','Other'];
+let usageSel=0,profLoaded=false;
+const iv=id=>{const v=parseFloat($(id).value);return isFinite(v)?v:0;};
+function presetLabel(i){const p=PRESETS[i];return `Loft tank ${p.cap} L · ${p.l} × ${p.w} × ${p.h} mm`;}
+function buildPresets(){const sel=$('inPreset'),shape=+$('inShape').value,cur=sel.value;
+  sel.innerHTML='<option value="0">Custom size</option>'+(shape===0?PRESETS.slice(1).map((p,i)=>`<option value="${i+1}">${presetLabel(i+1)}</option>`).join(''):'');
+  sel.value=[...sel.options].some(o=>o.value===cur)?cur:'0';}
+function tankHeight(){return +$('inShape').value?iv('inHgtC'):iv('inHgt');}
+function capEstimate(){const d=iv('inDepth');if(!d)return 0;
+  return +$('inShape').value?Math.PI*Math.pow(iv('inDia')/2,2)*d/1e6*0.95:iv('inLen')*iv('inWid')*d/1e6*0.85;}
+function profileUI(){
+  const shape=+$('inShape').value,loc=+$('inLoc').value;
+  $('dimRect').hidden=shape!==0;$('dimCyl').hidden=shape!==1;
+  $('inPreset').disabled=shape!==0;
+  const est=capEstimate();
+  $('capHint').textContent=est?`Estimated from the size: about ${Math.round(est)} L. Enter the rated capacity if you know it.`:'Rated capacity from the tank label or catalogue.';
+  const tips={1:'Loft tanks are shallow. The sensor cannot measure closer than 20–25 cm, so mount it on a stand pipe (at least 25 cm tall and 75 mm wide) over the manhole, not flat on the lid.',
+    2:'Underground sump: keep the probe away from the inlet pipe and walls. The low water alarm helps protect the pump from running dry.',
+    0:'Overhead tank: mount the probe at the centre of the lid or manhole, pointing straight down, at least 25 cm above the full water line.'};
+  setAlert($('profTip'),tips[loc]?'info':'',tips[loc]||'');
+  const r=recommended();
+  $('recHelp').textContent=`Recommended for ${USAGE[usageSel].toLowerCase()} use, ${LOCS[loc].toLowerCase()}: night leak check ${hh(r.nightStart)}–${hh(r.nightEnd)}, `+
+    `low water alarm ${r.lowAlarm}%, leak limit ${r.leakCm} cm.`;
+  $('depthShow').textContent=iv('inDepth')?iv('inDepth')+' mm':'Set it in Usage & tank';
+  calPreview();
+}
+function recommended(){const loc=+$('inLoc').value,depth=iv('inDepth')||spanMm();
+  return {nightStart:usageSel?22:1,nightEnd:usageSel?6:5,lowAlarm:loc===2?30:usageSel?25:15,
+    leakCm:Math.max(1,Math.round(depth*0.02/5)*0.5)};}
+function fillProfile(){if(profLoaded||!st.profile)return;profLoaded=true;const p=st.profile;
+  usageSel=p.usage;[...$('segUsage').children].forEach(b=>b.classList.toggle('on',+b.dataset.v===usageSel));
+  $('inLoc').value=p.location;$('inShape').value=p.shape;buildPresets();$('inPreset').value=String(p.preset);
+  if(!$('inPreset').value)$('inPreset').value='0';
+  const z=v=>v?v:'';
+  $('inLen').value=z(p.len);$('inWid').value=z(p.wid);$('inHgt').value=z(p.hgt);$('inDia').value=z(p.dia);$('inHgtC').value=z(p.hgt);
+  $('inDepth').value=z(p.depth);$('inCapP').value=z(st.capacity);
+  $('inGap').value=st.full.toFixed(1);$('inNow').value=Math.round(st.valid?st.level:50);$('nowVal').textContent=$('inNow').value+'%';
+  profileUI();}
+[...$('segUsage').children].forEach(b=>b.onclick=()=>{usageSel=+b.dataset.v;
+  [...$('segUsage').children].forEach(x=>x.classList.toggle('on',x===b));profileUI();});
+$('inShape').onchange=()=>{buildPresets();profileUI();};
+$('inLoc').onchange=()=>{if(+$('inLoc').value===1&&+$('inShape').value!==0){$('inShape').value='0';buildPresets();}profileUI();};
+$('inPreset').onchange=()=>{const p=PRESETS[+$('inPreset').value];
+  if(p){$('inLen').value=p.l;$('inWid').value=p.w;$('inHgt').value=p.h;$('inCapP').value=p.cap;$('inDepth').value=p.h-40;}profileUI();};
+['inLen','inWid','inHgt','inDia','inHgtC','inDepth'].forEach(id=>$(id).addEventListener('input',()=>{
+  if(['inLen','inWid','inHgt'].includes(id))$('inPreset').value='0';profileUI();}));
+async function saveProfile(){
+  const shape=+$('inShape').value,h=tankHeight(),d=iv('inDepth');
+  if(d&&h&&d>h){toast('Water depth cannot be more than the tank height',true);return;}
+  const cap=Math.round(iv('inCapP')||capEstimate());
+  const j=await post('/api/profile',{usage:usageSel,location:$('inLoc').value,shape,preset:shape?0:$('inPreset').value,
+    len:iv('inLen'),wid:iv('inWid'),hgt:h,dia:iv('inDia'),depth:d});
+  if(!j.ok)return;
+  if(cap!==st.capacity)await post('/api/settings',{capacity:cap});
+  $('inCapP').value=cap||'';profLoaded=false;formLoaded=false;await poll();
+  if(d&&Math.abs(d-spanMm())>15)toast('Tank saved. Calibrate below so the level matches the new water depth.');
+}
+async function applyRecommended(){const r=recommended();
+  if(!await ask(`Apply recommended settings for ${USAGE[usageSel].toLowerCase()} use? Night leak check ${hh(r.nightStart)}–${hh(r.nightEnd)}, `+
+    `low water alarm ${r.lowAlarm}%, leak limit ${r.leakCm} cm.`))return;
+  const j=await post('/api/settings',{nightStart:r.nightStart,nightEnd:r.nightEnd,lowAlarm:r.lowAlarm,leakCm:r.leakCm});
+  if(j.ok){await post('/api/profile',{usage:usageSel,location:$('inLoc').value});formLoaded=false;profLoaded=false;poll();}}
+
+// ---- Calibration from the slider or from measurements ----
+// E = sensor->water when empty, F = sensor->water when full (cm); depth D = E - F
+function calCheck(E,F){
+  if(F<15)return ['bad',`The full water line would be only ${F.toFixed(1)} cm below the sensor. It can't measure closer than about 20 cm: raise the sensor on a stand pipe.`];
+  if(F<22)return ['warn',`The full water line is ${F.toFixed(1)} cm below the sensor, at the edge of its blind zone. Readings near full may jump. 25 cm or more is safer.`];
+  if(E>450)return ['bad','The empty point would be more than 450 cm away, beyond the sensor range.'];
+  return ['',''];}
+function calText(E,F){const D=E-F,l=st.capacity>0?st.capacity/(D*10):0;
+  return `Empty at <b>${E.toFixed(1)} cm</b> · full at <b>${F.toFixed(1)} cm</b> from the sensor · water depth ${(D*10).toFixed(0)} mm`+
+    (l?` · 1 cm ≈ ${(l*10).toFixed(1)} L`:'');}
+function calPreview(){
+  const D=iv('inDepth')/10,p=+$('inNow').value/100,box=$('prevSlider'),box2=$('prevMeas');
+  $('nowVal').textContent=$('inNow').value+'%'+(st&&st.capacity?` · ${Math.round(st.capacity*p)} L`:'');
+  if(!D){box.className='calprev warn';box.textContent='Enter the water depth when full in Usage & tank first.';$('btnSlider').disabled=true;}
+  else if(!st||!st.valid){box.className='calprev warn';box.textContent='Waiting for a valid sensor reading.';$('btnSlider').disabled=true;}
+  else{const E=st.distance+p*D,F=E-D,[c,m]=calCheck(E,F);box.className='calprev '+c;box.innerHTML=calText(E,F)+(m?'<br>'+m:'');$('btnSlider').disabled=c==='bad';}
+  const G=iv('inGap');
+  if(!D||!G){box2.className='calprev';box2.textContent='Measure from the sensor face down to the overflow (full) line.';$('btnMeas').disabled=true;}
+  else{const E=G+D,[c,m]=calCheck(E,G);box2.className='calprev '+c;box2.innerHTML=calText(E,G)+(m?'<br>'+m:'');$('btnMeas').disabled=c==='bad';}
+}
+$('inNow').oninput=calPreview;$('inGap').oninput=calPreview;
+async function saveCal(E,F,how){
+  if(!await ask(`Save calibration ${how}? Empty at ${E.toFixed(1)} cm, full at ${F.toFixed(1)} cm from the sensor.`))return;
+  const j=await post('/api/calibrate',{empty:E.toFixed(1),full:F.toFixed(1)});
+  if(j.ok){await post('/api/profile',{gap:Math.round(F*10),depth:Math.round((E-F)*10)});formLoaded=false;profLoaded=false;poll();}}
+function calSlider(){const D=iv('inDepth')/10,p=+$('inNow').value/100,E=st.distance+p*D;saveCal(E,E-D,`with the tank ${$('inNow').value}% full`);}
+function calMeasured(){const D=iv('inDepth')/10,G=iv('inGap');saveCal(G+D,G,'from measurements');}
+
+// ---- Overview: litres and tank at a glance ----
+function renderGlance(){
+  const s=st,p=s.profile||{},cap=s.capacity,lvl=s.valid?s.level:null,depth=(s.empty-s.full)*10;
+  const L=v=>Math.round(v).toLocaleString()+' L';
+  $('litres').textContent=cap&&lvl!==null?`≈ ${L(cap*lvl/100)} of ${L(cap)}`:'';
+  $('gWater').textContent=lvl===null?'--':cap?L(cap*lvl/100):Math.round(lvl)+'%';
+  $('gFree').textContent=lvl===null?'--':cap?L(cap*(100-lvl)/100):Math.round(100-lvl)+'%';
+  $('gCap').textContent=cap?L(cap):'not set';
+  $('gSite').textContent=siteLine()||'not named';
+  $('gUsage').textContent=`${USAGE[p.usage||0]}, ${(LOCS[p.location||0]||'').toLowerCase()}`;
+  const dims=p.shape?(p.dia?`cylinder Ø ${p.dia} × ${p.hgt} mm`:'vertical cylinder'):(p.len?`${p.len} × ${p.wid} × ${p.hgt} mm`:'rectangular');
+  $('gTank').textContent=(p.preset&&PRESETS[p.preset]?`Loft ${PRESETS[p.preset].cap} L, `:'')+dims;
+  $('gDepth').textContent=p.depth?p.depth+' mm':'not set';
+  $('gRange').textContent=`${s.full.toFixed(1)} → ${s.empty.toFixed(1)} cm (${depth.toFixed(0)} mm)`;
+  $('gGap').textContent=s.full.toFixed(1)+' cm';
+  $('gRes').textContent=cap?`≈ ${(cap/depth*10).toFixed(1)} L (${(1000/depth).toFixed(1)}%)`:`${(1000/depth).toFixed(1)}% of the tank`;
+  const warn=[];
+  if(!p.depth&&Math.abs(s.empty-120)<0.05&&Math.abs(s.full-25)<0.05)warn.push('Not calibrated yet: the level uses default distances. Go to Setup → Calibration.');
+  if(s.full<20)warn.push(`The full water line is ${s.full.toFixed(1)} cm from the sensor, inside its blind zone. Raise the sensor on a stand pipe.`);
+  if(p.depth&&Math.abs(p.depth-depth)>15)warn.push(`Calibration (${depth.toFixed(0)} mm) doesn't match the tank's water depth (${p.depth} mm). Re-calibrate in Setup.`);
+  setAlert($('gWarn'),warn.length?'warn':'',warn.join('<br>'));
 }
 
 // ---- Site identity ----
@@ -497,7 +725,8 @@ function fillForm(){const s=st;formLoaded=true;
   $('inLow').value=s.lowAlarm;$('lowVal').textContent=s.lowAlarm;
   $('inRev').checked=s.reversed;$('inCbl').checked=s.colorByLevel;$('inTrig').value=s.trigUs;updateAmps();
   if(!$('inSsid').value&&s.wifi.saved)$('inSsid').value=s.wifi.saved;
-  $('inApAlways').checked=s.apAlways;fillAnalyticsForm();fillSite();}
+  fillPower();fillAnalyticsForm();fillSite();
+  $('calNowE').textContent=s.empty.toFixed(1)+' cm';$('calNowF').textContent=s.full.toFixed(1)+' cm';}
 // Worst case current: full tank, ~20 mA per lit color channel at full brightness, plus ~0.2 A for the board
 function updateAmps(){
   const n=Math.max(1,Math.min(300,parseInt($('inLeds').value)||1)),br=$('inBr').value/255,one=$('inCbl').checked;
@@ -570,7 +799,30 @@ async function forgetWifi(){
   await post('/api/wifi/forget');$('inSsid').value='';
 }
 
-async function setApAlways(on){const j=await post('/api/settings',{apAlways:on?1:0});if(!j.ok)$('inApAlways').checked=!on;}
+// ---- Power & radio ----
+const AP_MODES=['Automatic','Always on','On demand (BOOT button)'],TX_LBL=['Medium, 13 dBm','High, 19.5 dBm','Low, 8.5 dBm'];
+let txSel=0;
+function fillPower(){const s=st;$('inEco').checked=s.perfMode===0;$('inApMode').value=String(s.apMode);txSel=s.txLevel;
+  [...$('segTx').children].forEach(b=>b.classList.toggle('on',+b.dataset.v===txSel));powerUI();}
+function powerUI(){const m=+$('inApMode').value,eco=$('inEco').checked;
+  $('apModeHelp').textContent=[
+    'On while the device has no home Wi-Fi or cannot reach it. Off 30 s after home Wi-Fi connects.',
+    'Always on. Uses the most power and keeps the board warmest.',
+    'Off unless needed: press the BOOT button on the board to turn it on. It turns off after 10 minutes without devices. '+
+    'With no home Wi-Fi saved it is still on at start-up for setup.'][m];
+  $('pRate').textContent=eco?'2 per second, LEDs refreshed on change':'14 per second, LEDs 10 times a second';}
+function renderPower(){const s=st;
+  $('pCpu').textContent=s.cpuMhz+' MHz';$('pTx').textContent=TX_LBL[s.txLevel];
+  $('pMode').textContent=s.perfMode?'Performance':'Power saving';
+  $('wApMode').textContent=AP_MODES[s.apMode]+(s.wifi.ap?', on now':', off now');}
+[...$('segTx').children].forEach(b=>b.onclick=()=>{txSel=+b.dataset.v;[...$('segTx').children].forEach(x=>x.classList.toggle('on',x===b));});
+$('inApMode').onchange=powerUI;$('inEco').onchange=powerUI;
+async function savePower(){
+  const m=+$('inApMode').value;
+  if(m===2&&!st.wifi.saved&&!await ask('No home Wi-Fi is saved. In on-demand mode the hotspot turns off after 10 minutes without devices, '+
+    'and the dashboard is then only reachable after pressing the BOOT button. Continue?'))return;
+  const j=await post('/api/settings',{perf:$('inEco').checked?0:1,apMode:m,tx:txSel});
+  if(j.ok){formLoaded=false;poll();}}
 
 // ---- Connectivity log ----
 const pad=n=>String(n).padStart(2,'0');
@@ -624,9 +876,16 @@ async function clearLog(){if(!await ask('Clear the connectivity log? This cannot
 
 // ================= Tabs =================
 let tab='overview';
-function showTab(t){tab=['overview','analytics','log'].includes(t)?t:'overview';
+const TABS={overview:'tabOverview',analytics:'tabAnalytics',setup:'tabSetup',log:'tabLog'};
+function showTab(t){
+  // "#cWifi" etc. open the tab that holds that card and scroll to it
+  let target=null;
+  if(!TABS[t]){const el=t&&document.getElementById(t),m=el&&el.closest('main.tab');
+    if(m){target=el;t=Object.keys(TABS).find(k=>TABS[k]===m.id);}}
+  tab=TABS[t]?t:'overview';
   document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
-  $('tabOverview').hidden=tab!=='overview';$('tabAnalytics').hidden=tab!=='analytics';$('tabLog').hidden=tab!=='log';
+  for(const k in TABS)$(TABS[k]).hidden=tab!==k;
+  if(target)setTimeout(()=>target.scrollIntoView({behavior:'smooth',block:'start'}),50);
   if(tab==='analytics')loadAnalytics();if(tab==='log')loadLog();}
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{location.hash=b.dataset.tab;});
 window.addEventListener('hashchange',()=>showTab(location.hash.slice(1)));
@@ -977,13 +1236,15 @@ function buildReport(logo){
   P.text(M,y+4,S.org||'Society / organisation not set',14,{bold:true,color:S.org?C.txt:C.mut});
   P.text(M,y+18,`Building: ${S.building||ns}   \u00b7   Tank: ${S.tank||ns}`,9,{color:C.txt});
   y+=28;
-  P.rect(M,y,CW,70,C.panel);
-  const info=[['Society',S.org||ns],['Building',S.building||ns],['Tank',S.tank||ns],['Generated',fmtDT(now)],
-    ['Period','Last 7 days, '+period],['Device',`${st.board}, firmware ${st.fw}, ${st.wifi.host}.local`],
-    ['Tank setup',`${st.capacity?st.capacity.toLocaleString()+' L, ':''}empty at ${st.empty.toFixed(1)} cm, full at ${st.full.toFixed(1)} cm`]];
+  P.rect(M,y,CW,85,C.panel);
+  const info=[['Society',S.org||ns],['Building',S.building||ns],['Tank name',S.tank||ns],['Generated',fmtDT(now)],
+    ['Period','Last 7 days, '+period],['Device',`${st.board}, firmware ${st.fw}`],
+    ['Usage',`${USAGE[(st.profile||{}).usage||0]}, ${(LOCS[(st.profile||{}).location||0]||'').toLowerCase()}`],
+    ['Tank',$('gTank').textContent+(st.capacity&&!(st.profile||{}).preset?', '+st.capacity.toLocaleString()+' L':'')],
+    ['Calibration',`empty at ${st.empty.toFixed(1)} cm, full at ${st.full.toFixed(1)} cm, water depth ${((st.empty-st.full)*10).toFixed(0)} mm`]];
   info.forEach(([k,v],i)=>{const cx=M+10+(i%2)*(CW/2),cy=y+15+Math.floor(i/2)*15;
-    P.text(cx,cy,k,7,{bold:true,color:C.mut});P.text(cx+50,cy,v,7.5);});
-  y+=86;
+    P.text(cx,cy,k,7,{bold:true,color:C.mut});P.text(cx+56,cy,v,7.5);});
+  y+=101;
   section('Summary');y+=12;
   const kw=(CW-3*8)/4,kh=54;
   A.k.forEach(([cls,label,val,sub],i)=>{const cx=M+(i%4)*(kw+8),cy=y+Math.floor(i/4)*(kh+8);
@@ -992,7 +1253,7 @@ function buildReport(logo){
     P.text(cx+8,cy+29,val,12.5,{bold:true,color:cls==='bad'?C.red:cls==='warn'?C.warn:cls==='ok'?C.ok:cls==='live'?C.acc:C.txt});
     P.wrap(cx+8,cy+40,sub,6.5,kw-14,8,{color:C.mut});});
   y+=Math.ceil(A.k.length/4)*(kh+8)+10;
-  section('Level history, last 7 days');y+=12;levelChart(M,y,CW,150,168);y+=180;
+  section('Level history, last 7 days');y+=12;levelChart(M,y,CW,135,168);y+=165;
   const half=(CW-20)/2;
   section('Motor run time per day',M,half);section('Water used per day',M+half+20,half);y+=10;
   bars(M,y,half,120,A.dl,A.motor,v=>Math.round(v)+'m');
@@ -1054,7 +1315,7 @@ async function exportPdf(){
 }
 
 poll().then(()=>{showTab(location.hash.slice(1));setTimeout(loadAnalytics,3000);});
-setInterval(()=>{if(!document.hidden)poll();},1000);
+(function tick(){setTimeout(async()=>{if(!document.hidden)await poll();tick();},st&&st.perfMode===0?2000:1000);})();
 setInterval(()=>{if(!document.hidden&&tab==='log'&&$('logAuto').checked)loadLog();},5000);
 setInterval(()=>{if(!document.hidden&&(tab==='analytics'||tab==='overview'))loadAnalytics();},120000);
 </script>

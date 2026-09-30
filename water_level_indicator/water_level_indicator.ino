@@ -21,7 +21,7 @@
 */
 
 /*
-  Water Tanks Monitor System (WTMS)                        firmware 2.6.1
+  Water Tanks Monitor System (WTMS)                        firmware 2.8.1
   ESP32 DevKit or ESP8266 NodeMCU + AJ-SR04M / JSN-SR04T + WS2812B strip (1-300 LEDs, set in the dashboard)
 
   - Each device is named in the dashboard: society / organisation, building, tank.
@@ -82,7 +82,7 @@
 #include "event_log.h"
 #include "history.h"
 
-#define FW_VERSION  "2.6.1"
+#define FW_VERSION  "2.8.1"
 #define PRODUCT     "Water Tanks Monitor System"
 #define DEFAULT_LEDS 30
 #define MAX_LEDS     300
@@ -90,7 +90,10 @@
 // ================= Timing =================
 const float         MAX_VALID_CM     = 450.0;   // longer echoes mean "no target found"
 const unsigned long ECHO_TIMEOUT_US  = 27000;   // ~460 cm
-const unsigned long PING_INTERVAL_MS = 70;      // one reading every 70 ms
+const unsigned long PING_FAST_MS     = 70;      // performance mode: ~14 readings per second
+const unsigned long PING_ECO_MS      = 500;     // power saving: 2 readings per second
+const unsigned long AP_DEMAND_IDLE   = 600000;  // on-demand hotspot: off after 10 min without devices
+const int           BOOT_BTN         = 0;       // BOOT button (ESP32) / FLASH button (NodeMCU), GPIO0
 const int           MEDIAN_N         = 7;       // median of the last 7 readings
 const int           FAIL_LIMIT       = 10;      // consecutive misses before "sensor fault"
 const unsigned long CONNECT_TIMEOUT  = 20000;   // give up a Wi-Fi attempt after 20 s
@@ -108,7 +111,7 @@ struct Settings {
   uint8_t  brightness;
   uint8_t  reversed;
   uint8_t  colorByLevel;
-  uint8_t  apAlways;      // 1 = keep the hotspot on even when home Wi-Fi works
+  uint8_t  apMode;        // hotspot: 0 automatic, 1 always on, 2 on demand (BOOT button)
   uint16_t numLeds;      // added in 2.2.0; older saves read as invalid -> default
   // added in 2.4.0 (analytics)
   uint32_t capacityL;    // tank capacity in litres, 0 = unknown
@@ -116,6 +119,9 @@ struct Settings {
   uint8_t  nightEnd;
   uint16_t leakMm;       // night drop that counts as a possible leak (mm)
   uint16_t fillMmMin;    // minimum rise speed that counts as filling (mm/min)
+  // added in 2.8.0 (stored in former padding bytes, which read as 0 = the production defaults)
+  uint8_t  perfMode;     // 0 power saving (production), 1 performance
+  uint8_t  txLevel;      // Wi-Fi transmit power: 0 medium, 1 high, 2 low
 };
 const uint32_t SETTINGS_MAGIC = 0x59544B32;   // "YTK2"
 Settings cfg;
@@ -194,6 +200,25 @@ void deriveNames(String& apOut, String& hostOut) {
     hostOut.toLowerCase();
   }
 }
+
+// ================= Tank profile (EEPROM offset 384) =================
+// Usage type, where the tank is, its shape and size. Used by the dashboard for
+// calibration from dimensions, litres, recommended settings and the PDF report.
+struct TankProfile {
+  uint32_t magic;
+  uint8_t  usage;         // 0 domestic, 1 commercial
+  uint8_t  location;      // 0 overhead (roof), 1 loft / bathroom, 2 underground sump, 3 other
+  uint8_t  shape;         // 0 rectangular, 1 vertical cylinder
+  uint8_t  preset;        // 0 custom, 1.. preset index in the dashboard
+  uint16_t lengthMm, widthMm, heightMm, diaMm;
+  uint16_t depthMm;       // water depth when full (bottom -> full / overflow line)
+  uint16_t gapMm;         // sensor face -> full water line
+};
+const uint32_t PROF_MAGIC = 0x5754504B;       // "WTPK"
+const int      PROF_ADDR  = 384;
+TankProfile prof;
+
+void saveProfile() { prof.magic = PROF_MAGIC; EEPROM.put(PROF_ADDR, prof); EEPROM.commit(); }
 
 void saveIdentity() { ident.magic = ID_MAGIC; EEPROM.put(ID_ADDR, ident); EEPROM.commit(); }
 
@@ -296,7 +321,8 @@ void setDefaults() {
   cfg.magic = SETTINGS_MAGIC;
   cfg.distEmpty = 120.0;  cfg.distFull = 25.0;  cfg.lowAlarm = 0.10;
   cfg.trigUs = 100;       cfg.brightness = 150;
-  cfg.reversed = 0;       cfg.colorByLevel = 0;  cfg.apAlways = 0;
+  cfg.reversed = 0;       cfg.colorByLevel = 0;  cfg.apMode = 0;
+  cfg.perfMode = 0;       cfg.txLevel = 0;
   cfg.numLeds = DEFAULT_LEDS;
   setAnalyticsDefaults();
 }
@@ -322,7 +348,12 @@ void loadStorage() {
     cfg.numLeds = DEFAULT_LEDS;
     saveSettings();
   }
-  if (cfg.apAlways > 1) { cfg.apAlways = 0; saveSettings(); }
+  if (cfg.apMode > 2 || cfg.perfMode > 1 || cfg.txLevel > 2) {
+    if (cfg.apMode > 2) cfg.apMode = 0;
+    if (cfg.perfMode > 1) cfg.perfMode = 0;
+    if (cfg.txLevel > 2) cfg.txLevel = 0;
+    saveSettings();
+  }
   if (cfg.capacityL > 1000000 || cfg.nightStart > 23 || cfg.nightEnd > 23 || cfg.nightStart == cfg.nightEnd ||
       cfg.leakMm < 2 || cfg.leakMm > 500 || cfg.fillMmMin < 1 || cfg.fillMmMin > 200) {   // saved by 2.3.x or older
     setAnalyticsDefaults();
@@ -343,6 +374,10 @@ void loadStorage() {
   EEPROM.get(ID_ADDR, ident);
   if (ident.magic != ID_MAGIC) memset(&ident, 0, sizeof(ident));
   ident.org[48] = 0; ident.building[32] = 0; ident.tank[32] = 0;
+  EEPROM.get(PROF_ADDR, prof);
+  if (prof.magic != PROF_MAGIC || prof.usage > 1 || prof.location > 3 || prof.shape > 1) {
+    memset(&prof, 0, sizeof(prof));
+  }
   deriveNames(apName, hostName);
 }
 
@@ -373,7 +408,7 @@ float medianOfSamples() {
 
 void sensorTask() {
   static unsigned long last = 0;
-  if (millis() - last < PING_INTERVAL_MS) return;
+  if (millis() - last < (cfg.perfMode ? PING_FAST_MS : PING_ECO_MS)) return;
   last = millis();
 
   float d = readDistanceOnce();
@@ -440,9 +475,11 @@ void drawLevel(float level) {
     for (int i = 0; i < 3 && i < cfg.numLeds; i++) setLed(i, blinkState ? strip.Color(255, 0, 0) : 0);
 }
 
+bool ledsForce = true;                  // redraw even if nothing changed (after settings changes)
 void displayTask() {
   static unsigned long last = 0;
-  if (millis() - last < 100) return;
+  static uint8_t lastPix[MAX_LEDS * 3];
+  if (millis() - last < (cfg.perfMode ? 100UL : 250UL)) return;
   last = millis();
   blinkState = (millis() / 500) % 2;
 
@@ -455,11 +492,50 @@ void displayTask() {
     setLed(0, blinkState ? strip.Color(0, 0, 255) : 0);        // sensor fault
   }
   if (apActive && !blinkState) setLed(cfg.numLeds - 1, strip.Color(0, 0, 160));  // hotspot on
+  // Only send data to the strip when a pixel actually changed
+  size_t n = (size_t)cfg.numLeds * 3;
+  const uint8_t* px = strip.getPixels();
+  if (!ledsForce && memcmp(px, lastPix, n) == 0) return;
+  memcpy(lastPix, px, n);
+  ledsForce = false;
   strip.show();
+}
+
+// ================= Power =================
+// Power saving (default): CPU 80 MHz, fewer sensor reads and LED refreshes,
+// Wi-Fi modem sleep while the hotspot is off. Transmit power is chosen separately.
+const char* const TX_NAMES[] = {"medium (13 dBm)", "high (19.5 dBm)", "low (8.5 dBm)"};
+void applyRadio() {
+  if (WiFi.getMode() == WIFI_OFF) return;
+  bool staOnly = !apActive;
+#if defined(ESP32)
+  static const wifi_power_t P[] = {WIFI_POWER_13dBm, WIFI_POWER_19_5dBm, WIFI_POWER_8_5dBm};
+  WiFi.setTxPower(P[cfg.txLevel]);
+  WiFi.setSleep(cfg.perfMode == 0 && staOnly);        // modem sleep only works without the hotspot
+#else
+  static const float P[] = {13.0f, 20.5f, 8.5f};
+  WiFi.setOutputPower(P[cfg.txLevel]);
+  WiFi.setSleepMode(cfg.perfMode == 0 && staOnly ? WIFI_MODEM_SLEEP : WIFI_NONE_SLEEP);
+#endif
+}
+void applyPower() {
+#if defined(ESP32)
+  setCpuFrequencyMhz(cfg.perfMode ? 240 : 80);        // Wi-Fi works down to 80 MHz
+#endif
+  applyRadio();
+  ledsForce = true;
+}
+uint32_t cpuMhz() {
+#if defined(ESP32)
+  return getCpuFrequencyMhz();
+#else
+  return ESP.getCpuFreqMHz();
+#endif
 }
 
 // ================= Wi-Fi =================
 const char* netStateName();
+unsigned long apIdleSince = 0;
 void startAP(const char* why) {
   if (apActive) return;
   WiFi.mode(WIFI_AP_STA);
@@ -469,6 +545,8 @@ void startAP(const char* why) {
   dns.start(53, "*", WiFi.softAPIP());         // every name -> dashboard (captive portal)
   apActive = true;
   apOffAt = 0;
+  apIdleSince = millis();
+  applyRadio();
   lastChannel = WiFi.channel();
   logWrite('I', "ap", String("Hotspot on (") + why + "), channel " + String((int)lastChannel));
 }
@@ -477,9 +555,10 @@ void stopAP(const char* why) {
   if (!apActive) return;
   dns.stop();
   WiFi.softAPdisconnect(true);
-  WiFi.mode(WIFI_STA);
+  WiFi.mode(haveCreds() ? WIFI_STA : WIFI_OFF);    // no home network: switch the radio off completely
   apActive = false;
   apOffAt = 0;
+  applyRadio();
   logWrite('I', "ap", String("Hotspot off (") + why + ")");
 }
 
@@ -487,8 +566,10 @@ void beginConnect(const String& ssid, const String& pass, bool isNew) {
   trySsid = ssid;
   tryPass = pass;
   tryIsNew = isNew;
+  if (WiFi.getMode() == WIFI_OFF) WiFi.mode(WIFI_STA);
   WiFi.disconnect(false);
   WiFi.begin(ssid.c_str(), pass.length() ? pass.c_str() : nullptr);
+  applyRadio();
   net = NET_CONNECTING;
   connectStart = millis();
   netMsg = "Connecting to " + ssid + "...";
@@ -506,7 +587,7 @@ void onConnected() {
     tryIsNew = false;
   }
   netMsg = "Connected to " + WiFi.SSID();
-  if (apActive && !cfg.apAlways) apOffAt = millis() + AP_OFF_DELAY;
+  if (apActive && cfg.apMode != 1) apOffAt = millis() + AP_OFF_DELAY;
   if (!mdnsStarted && MDNS.begin(hostName.c_str())) {
     MDNS.addService("http", "tcp", 80);
     mdnsStarted = true;
@@ -526,7 +607,10 @@ void onConnectFailed() {
   lastRetry = millis();
   logWrite('W', "wifi", "Could not connect to " + trySsid + " in " + String(CONNECT_TIMEOUT / 1000) +
                         " s. Last reason: " + staReasonText(lastStaReason) + " (" + String(lastStaReason) + ")");
-  startAP("home Wi-Fi not reachable");
+  if (cfg.apMode == 2 && !apActive)
+    logWrite('I', "ap", "Hotspot stays off (on-demand mode). Press the BOOT button to turn it on.");
+  else
+    startAP("home Wi-Fi not reachable");
 }
 
 void wifiTask() {
@@ -585,9 +669,13 @@ void wifiTask() {
       break;
   }
 
-  if (apActive && apOffAt && now >= apOffAt && net == NET_CONNECTED && !cfg.apAlways)
+  if (apActive && apOffAt && now >= apOffAt && net == NET_CONNECTED && cfg.apMode != 1)
     stopAP("connected to home Wi-Fi");
-  if (cfg.apAlways && !apActive) startAP("always-on setting");
+  if (cfg.apMode == 1 && !apActive) startAP("always-on setting");
+  if (apActive && cfg.apMode == 2) {                    // on demand: off after 10 min without devices
+    if (WiFi.softAPgetStationNum() > 0) apIdleSince = now;
+    else if (now - apIdleSince > AP_DEMAND_IDLE) stopAP("on-demand mode, no devices for 10 min");
+  }
 
   // Channel changes kick hotspot users off (ESP8266 hotspot follows the home Wi-Fi channel)
   if (apActive) {
@@ -596,6 +684,22 @@ void wifiTask() {
       logWrite('W', "ap", "Hotspot channel changed " + String(lastChannel) + " -> " + String(ch) +
                           ": devices on the hotspot are disconnected briefly");
     if (ch) lastChannel = ch;
+  }
+}
+
+// BOOT / FLASH button: turns the hotspot on (on-demand mode, or any time it is off)
+void buttonTask() {
+  static int last = HIGH;
+  static unsigned long changedAt = 0;
+  static bool handled = false;
+  int v = digitalRead(BOOT_BTN);
+  if (v != last) { last = v; changedAt = millis(); handled = false; }
+  if (v == LOW && !handled && millis() - changedAt > 50) {
+    handled = true;
+    if (!apActive) startAP("BOOT button pressed");
+    else logWrite('I', "ap", "BOOT button: hotspot kept on for another 10 min");
+    apIdleSince = millis();
+    if (net == NET_CONNECTED && cfg.apMode != 1) apOffAt = millis() + AP_DEMAND_IDLE;
   }
 }
 
@@ -736,7 +840,11 @@ void handleStatus() {
   j += ",\"vcc\":";          j += String(supplyMv());
   j += ",\"epoch\":";        j += String(nowEpoch());
   j += ",\"logStore\":\"";  j += logFsOK ? "flash" : "memory";
-  j += "\",\"apAlways\":";  j += cfg.apAlways ? "true" : "false";
+  j += "\",\"apAlways\":";  j += cfg.apMode == 1 ? "true" : "false";
+  j += ",\"apMode\":";      j += String(cfg.apMode);
+  j += ",\"perfMode\":";    j += String(cfg.perfMode);
+  j += ",\"txLevel\":";     j += String(cfg.txLevel);
+  j += ",\"cpuMhz\":";      j += String(cpuMhz());
   j += ",\"filling\":";      j += fd.filling ? "true" : "false";
   j += ",\"fillRate\":";     j += String(fd.filling ? fd.rateMmMin / 10.0 : 0.0, 2);
   j += ",\"fillStart\":";    j += String(fd.filling ? fd.startT : 0);
@@ -759,6 +867,17 @@ void handleStatus() {
   j += ",\"host\":\""; j += hostName; j += "\"}";
   String nextAp, nextHost;
   deriveNames(nextAp, nextHost);                 // names that apply after the next restart
+  j += ",\"profile\":{\"usage\":";  j += String(prof.usage);
+  j += ",\"location\":";  j += String(prof.location);
+  j += ",\"shape\":";     j += String(prof.shape);
+  j += ",\"preset\":";    j += String(prof.preset);
+  j += ",\"len\":";       j += String(prof.lengthMm);
+  j += ",\"wid\":";       j += String(prof.widthMm);
+  j += ",\"hgt\":";       j += String(prof.heightMm);
+  j += ",\"dia\":";       j += String(prof.diaMm);
+  j += ",\"depth\":";     j += String(prof.depthMm);
+  j += ",\"gap\":";       j += String(prof.gapMm);
+  j += "}";
   j += ",\"site\":{\"org\":\"";  j += jsonEscape(ident.org);
   j += "\",\"building\":\"";     j += jsonEscape(ident.building);
   j += "\",\"tank\":\"";         j += jsonEscape(ident.tank);
@@ -792,12 +911,14 @@ void handleCalibrate() {
 void handleSettings() {
   bool defaults = server.hasArg("defaults");
   uint16_t oldLeds = cfg.numLeds;
-  uint8_t oldAp = cfg.apAlways;
+  uint8_t oldAp = cfg.apMode, oldPerf = cfg.perfMode, oldTx = cfg.txLevel;
   uint32_t oldCap = cfg.capacityL;
   if (defaults) {
     setDefaults();
     cfg.numLeds = oldLeds;              // LED count describes the hardware, keep it
-    cfg.apAlways = oldAp;               // Wi-Fi behaviour is not a display setting
+    cfg.apMode = oldAp;                 // Wi-Fi and power are not display settings
+    cfg.perfMode = oldPerf;
+    cfg.txLevel = oldTx;
     cfg.capacityL = oldCap;             // tank size is hardware too
   } else {
     if (server.hasArg("leds"))         cfg.numLeds      = constrain(server.arg("leds").toInt(), 1, MAX_LEDS);
@@ -807,14 +928,20 @@ void handleSettings() {
     if (cfg.nightStart == cfg.nightEnd) cfg.nightEnd = (cfg.nightStart + 4) % 24;
     if (server.hasArg("leakCm"))     cfg.leakMm     = constrain((int)(server.arg("leakCm").toFloat() * 10 + 0.5), 2, 500);
     if (server.hasArg("fillCm"))     cfg.fillMmMin  = constrain((int)(server.arg("fillCm").toFloat() * 10 + 0.5), 1, 200);
-    if (server.hasArg("apAlways")) {
-      uint8_t v = server.arg("apAlways").toInt() ? 1 : 0;
-      if (v != cfg.apAlways) {
-        cfg.apAlways = v;
-        logWrite('I', "cfg", v ? "Setting: keep hotspot always on" : "Setting: hotspot only when needed");
-        if (!v && net == NET_CONNECTED && apActive) apOffAt = millis() + 5000;
-      }
+    int apArg = server.hasArg("apMode") ? constrain(server.arg("apMode").toInt(), 0, 2)
+              : server.hasArg("apAlways") ? (server.arg("apAlways").toInt() ? 1 : 0) : -1;
+    if (apArg >= 0 && apArg != cfg.apMode) {
+      static const char* const M[] = {"automatic", "always on", "on demand (BOOT button)"};
+      cfg.apMode = apArg;
+      logWrite('I', "cfg", String("Setting: hotspot ") + M[apArg]);
+      if (apArg != 1 && net == NET_CONNECTED && apActive) apOffAt = millis() + 5000;
+      if (apArg == 2) apIdleSince = millis();
     }
+    bool power = false;
+    if (server.hasArg("perf")) { uint8_t v = constrain(server.arg("perf").toInt(), 0, 1); power |= v != cfg.perfMode; cfg.perfMode = v; }
+    if (server.hasArg("tx"))   { uint8_t v = constrain(server.arg("tx").toInt(), 0, 2);   power |= v != cfg.txLevel;  cfg.txLevel = v; }
+    if (power) logWrite('I', "cfg", String("Setting: ") + (cfg.perfMode ? "performance mode" : "power saving") +
+                                   ", transmit power " + TX_NAMES[cfg.txLevel]);
     if (server.hasArg("brightness"))   cfg.brightness   = constrain(server.arg("brightness").toInt(), 5, 255);
     if (server.hasArg("lowAlarm"))     cfg.lowAlarm     = constrain(server.arg("lowAlarm").toInt(), 0, 50) / 100.0;
     if (server.hasArg("reversed"))     cfg.reversed     = server.arg("reversed").toInt() ? 1 : 0;
@@ -828,6 +955,7 @@ void handleSettings() {
   }
   strip.setBrightness(cfg.brightness);
   saveSettings();
+  applyPower();
   sendResult(true, defaults ? "Settings reset to defaults" : "Settings saved");
 }
 
@@ -915,6 +1043,28 @@ void handleSite() {
   sendResult(true, rename ? "Saved. Restart the device to use the new hotspot name and web address."
                           : "Site details saved");
 }
+void handleProfile() {
+  auto num = [](const char* k, long lo, long hi, long cur) -> long {
+    return server.hasArg(k) ? constrain(server.arg(k).toInt(), lo, hi) : cur;
+  };
+  prof.usage    = num("usage", 0, 1, prof.usage);
+  prof.location = num("location", 0, 3, prof.location);
+  prof.shape    = num("shape", 0, 1, prof.shape);
+  prof.preset   = num("preset", 0, 50, prof.preset);
+  prof.lengthMm = num("len", 0, 20000, prof.lengthMm);
+  prof.widthMm  = num("wid", 0, 20000, prof.widthMm);
+  prof.heightMm = num("hgt", 0, 20000, prof.heightMm);
+  prof.diaMm    = num("dia", 0, 20000, prof.diaMm);
+  prof.depthMm  = num("depth", 0, 20000, prof.depthMm);
+  prof.gapMm    = num("gap", 0, 5000, prof.gapMm);
+  saveProfile();
+  static const char* const U[] = {"Domestic", "Commercial"};
+  static const char* const L[] = {"overhead", "loft / bathroom", "underground sump", "other"};
+  String dims = prof.shape ? "cylinder D" + String(prof.diaMm) : String(prof.lengthMm) + "x" + String(prof.widthMm);
+  logWrite('I', "cfg", String("Tank profile saved: ") + U[prof.usage] + ", " + L[prof.location] + ", " + dims +
+                        "x" + String(prof.heightMm) + " mm, water depth " + String(prof.depthMm) + " mm");
+  sendResult(true, "Tank profile saved");
+}
 void handleHistoryClear() {
   historyClear();
   logWrite('I', "tank", "Tank history cleared from dashboard");
@@ -967,6 +1117,9 @@ void setup() {
   Serial.println(F("(C) 2026 Chanchal Sakarde. All Rights Reserved. Open source under GPL-3.0."));
   resetReason = getResetReason();
   loadStorage();
+#if defined(ESP32)
+  setCpuFrequencyMhz(cfg.perfMode ? 240 : 80);          // before Wi-Fi starts
+#endif
   logBegin(bootCount);
   logWrite(resetIsProblem ? 'E' : 'I', "boot",
            "Boot #" + String(bootCount) + ", firmware " FW_VERSION " on " BOARD_NAME ", restart cause: " + resetReason);
@@ -974,7 +1127,9 @@ void setup() {
   if (resetIsProblem) logWrite('E', "boot", "Crash details: " + ESP.getResetInfo());
   logWrite(supplyMv() < 3000 ? 'W' : 'I', "boot", "Supply voltage " + String(supplyMv() / 1000.0, 2) + " V");
 #endif
-  if (!logFsOK) logWrite('W', "sys", "Flash log unavailable: log kept in memory only. Choose a Flash Size with FS in Tools.");
+  if (!logFsOK) logWrite('W', "sys", "Flash log unavailable: log kept in memory only. Check Tools > Partition Scheme (ESP32) or Flash Size with FS (ESP8266).");
+  if (logFsFormatted) logWrite('I', "sys", "Flash storage was blank and has been formatted (normal after the first upload or 'Erase All Flash').");
+  if (bootCount == 1) logWrite('I', "sys", "First start: settings are at their defaults. Keep Tools > 'Erase All Flash Before Sketch Upload' Disabled to keep them across uploads.");
 
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
@@ -997,7 +1152,7 @@ void setup() {
   delay(50);
 #if defined(ESP8266)
   WiFi.hostname(hostName);
-  WiFi.setSleepMode(WIFI_NONE_SLEEP);
+
 #else
   WiFi.setHostname(hostName.c_str());
 #endif
@@ -1016,16 +1171,15 @@ void setup() {
 #endif
 
   if (haveCreds()) {
-    if (cfg.apAlways) startAP("always-on setting");
+    if (cfg.apMode == 1) startAP("always-on setting");
     else              WiFi.mode(WIFI_STA);
     beginConnect(creds.ssid, creds.pass, false);
   } else {
     startAP("no home Wi-Fi saved");
     netMsg = "Not connected to a home network yet. Choose one to connect.";
   }
-#if defined(ESP32)
-  WiFi.setSleep(false);
-#endif
+  applyPower();                                         // CPU speed, transmit power, Wi-Fi sleep
+  pinMode(BOOT_BTN, INPUT_PULLUP);
 
   server.on("/",                  HTTP_GET,  handleDashboard);
   server.on("/dashboard",         HTTP_GET,  handleDashboard);
@@ -1043,6 +1197,7 @@ void setup() {
   server.on("/api/fills",         HTTP_GET,  handleFills);
   server.on("/api/history/clear", HTTP_POST, handleHistoryClear);
   server.on("/api/site",          HTTP_POST, handleSite);
+  server.on("/api/profile",       HTTP_POST, handleProfile);
   server.onNotFound(handleNotFound);
   server.begin();
   lastLoopAt = millis();
@@ -1060,13 +1215,15 @@ void loop() {
   fillTask(sensorOK ? currentDistance : -1, cfg.fillMmMin, cfg.distFull);
   historyTask(sensorOK ? currentDistance : -1);
   displayTask();
+  buttonTask();
 
-  static unsigned long lastLog = 0;
-  if (millis() - lastLog > 1000) {
+  static unsigned long lastLog = 0;                   // live values on Serial in performance mode only
+  if (cfg.perfMode && millis() - lastLog > 1000) {
     lastLog = millis();
     if (sensorOK) Serial.printf("Distance: %.1f cm  Level: %.0f%%\n", currentDistance, smoothedLevel * 100);
     else          Serial.println("Sensor: no echo");
   }
 
   if (restartAt && millis() > restartAt) ESP.restart();
+  delay(cfg.perfMode ? 1 : 5);                         // let the CPU idle between passes
 }

@@ -7,6 +7,46 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [2.8.1] - 2026-09-30
+
+### Fixed
+- ESP32: no more red `esp_littlefs ... Corrupted dir pair` / `mount failed (-84)` messages when the flash storage is blank (first upload, or "Erase All Flash Before Sketch Upload" enabled). The storage is formatted quietly and the log records "Flash storage was blank and has been formatted".
+
+### Added
+- Log line on the first start (boot #1) explaining that settings are at their defaults and how to keep them across uploads.
+- README: recommended Arduino IDE Tools settings for ESP32 and NodeMCU, and troubleshooting for lost settings after an upload.
+
+## [2.8.0] - 2026-09-30
+
+### Added
+- **Power & radio** card in Setup.
+- **Power saving (production mode)**, on by default: ESP32 CPU at 80 MHz (was 240 MHz), 2 sensor reads per second (was 14), LED strip refreshed at most 4 times a second and only when a pixel changed, Wi-Fi modem sleep while the hotspot is off, a 5 ms idle pause per loop pass, no per-second Serial output, dashboard refresh every 2 s. Performance mode restores the previous behaviour.
+- **Wi-Fi transmit power:** Low 8.5 dBm, Medium 13 dBm (default), High 19.5 dBm (previous behaviour).
+- **Hotspot modes:** Automatic, Always on, and **On demand**. The BOOT button (ESP32) or FLASH button (NodeMCU) turns the hotspot on, and it turns off after 10 minutes without devices. With no home network and no hotspot, the radio is switched off completely.
+- BOOT button press, hotspot mode and power changes are recorded in the connectivity log.
+- `/api/status` fields: `apMode`, `perfMode`, `txLevel`, `cpuMhz`. `/api/settings` accepts `apMode`, `perf`, `tx`.
+
+### Changed
+- "Keep hotspot always on" switch replaced by the Hotspot setting in Power & radio. The old `apAlways` setting carries over as "Always on".
+- **Defaults** keeps the power, transmit power and hotspot settings.
+- README and screenshots use "NYATI" as the example society.
+
+## [2.7.0] - 2026-09-30
+
+### Added
+- **Setup** tab with all configuration: Usage & tank, Calibration, Site details, Display & sensor, Wi-Fi and Device.
+- **Usage & tank** card: Domestic / Commercial, tank location (overhead, loft / bathroom, underground sump, other), shape (rectangular, vertical cylinder), dimensions in mm, water depth when full, capacity with an estimate from the size, mounting tips per location. Stored in flash (`/api/profile`, EEPROM offset 384).
+- Loft tank presets: 150, 225, 270, 400, 500 and 1000 L with their outer dimensions.
+- **Recommended settings** for Domestic or Commercial use and each tank location: night leak window, low water alarm, leak limit.
+- Calibration from a **current-level slider** (no need to empty or fill the tank) and from **measurements** (sensor to full water line + water depth), each with a preview and blind-zone warnings.
+- Overview **Tank at a glance** card: water now, space left, capacity in litres, site, usage, tank size, water depth, calibrated range, litres per cm, and setup warnings (not calibrated, blind zone, calibration not matching the tank depth).
+- Litres shown under the level percentage.
+- PDF report: usage, tank size and calibration in the details table.
+- Links to a card (e.g. `#cWifi`) open the tab that holds it.
+
+### Changed
+- Overview tab now shows only the level and the tank summary. Calibration, site, display, Wi-Fi and device cards moved to Setup.
+
 ## [2.6.1] - 2026-09-30
 
 ### Changed
@@ -171,7 +211,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - `STRIP_REVERSED` option for strips mounted top-down.
 - Startup sweep animation.
 
-[Unreleased]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.6.1...HEAD
+[Unreleased]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.8.1...HEAD
+[2.8.1]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.8.0...v2.8.1
+[2.8.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.7.0...v2.8.0
+[2.7.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.6.1...v2.7.0
 [2.6.1]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.4.0...v2.5.0
