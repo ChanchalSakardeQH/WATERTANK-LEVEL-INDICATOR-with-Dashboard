@@ -7,6 +7,39 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added (Android app 1.1.0, works with firmware 2.9.0 and newer)
+- **Set up a new tank** wizard: connect to the tank's hotspot through Android's Wi-Fi picker (WTMS… networks, app-only connection on Android 10+, in-app list on Android 8–9) → challenge-response admin login with a forced change of the default password → optional names → choose the home or society Wi-Fi from the tank's own scan → wait for the join → switch the phone back and save the tank under its new address (found by mDNS host name if needed). If the names changed, the tank is restarted once.
+- **Open a tank's hotspot**: view a tank through its WTMS Wi-Fi without setting it up.
+- **Remote address** per tank (Cloudflare Tunnel link or VPN address), used automatically when the home address doesn't answer; also used by background alerts.
+
+### Changed (Android app)
+- Local addresses are no longer forced over Wi-Fi while a VPN is active, so Tailscale access works away from home.
+- Android build moved to **Gradle 8.13** (runs on Java 17–23), the same toolchain as the other woodyouloveit apps.
+- **Self-setting-up build script** (`tools/build-android.ps1`, ported from the String Art project):
+  - With permission or `-Yes`, it installs a missing Java 17 (Temurin), the Android SDK command-line tools, the SDK licence, platform-tools, the needed platform and build tools.
+  - It diagnoses Gradle failures (licence, missing packages, SDK, Java, damaged download, stuck daemons, memory, network, disk, long paths, HTTPS proxies), fixes what it can and builds again.
+  - New options `-Yes`, `-NoAutoFix`, `-DryRun`.
+  - The Gradle version and Android platform are read from the project.
+
+## [2.12.0] - 2026-10-08
+
+### Added
+- **Native Android app 1.0.0** (`android/`, Kotlin): tank list with live levels, network discovery (mDNS plus the hotspot address), the device dashboard in-app, files saved to Downloads/WTMS, sharing with the **file attached** to WhatsApp, email or the share sheet, background notifications (low water, sensor fault, optional offline), and Wi-Fi routing so hotspots without internet work.
+- **`build-android.bat` and `tools/build-android.ps1`**: menu-driven Windows build (debug, signed release APK + AAB, keystore creation, bundletool test install, doctor, clean), outputs in `release/android/<version>/` with checksums and logs.
+- Dashboard: app bridge (`window.WTMSApp`). Inside the app, Download, Share, WhatsApp and Email hand the real file to Android.
+
+## [2.11.0] - 2026-10-08
+
+### Added
+- **Share by WhatsApp or email** for the water level (Overview), the PDF report (Analytics), level data (Analytics), the connectivity log (Log, admin) and the settings backup (Admin & backup, admin).
+  - A share window shows a ready-written summary (site, level, analytics tiles, Settings ID, file name) with WhatsApp, Email, Download and Copy text buttons.
+  - The phone's own share sheet, which attaches the file directly, is offered when the dashboard is opened over https:// (for example through Cloudflare Tunnel).
+  - Over plain http://, WhatsApp and Email open with the summary while the file downloads, ready to attach.
+- **Export data (CSV)** in Analytics: every recorded 2-minute reading (date, time, distance in the chosen unit, level %, litres, filling) plus a fills table, UTF-8 with BOM for Excel.
+
+### Changed
+- All downloads (PDF, log, settings, CSV) share one file builder, so download and share always produce the same file and name.
+
 ## [2.10.1] - 2026-09-30
 
 ### Fixed
@@ -258,7 +291,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - `STRIP_REVERSED` option for strips mounted top-down.
 - Startup sweep animation.
 
-[Unreleased]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.10.1...HEAD
+[Unreleased]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.12.0...HEAD
+[2.12.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.11.0...v2.12.0
+[2.11.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.10.1...v2.11.0
 [2.10.1]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.10.0...v2.10.1
 [2.10.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.9.0...v2.10.0
 [2.9.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.8.1...v2.9.0

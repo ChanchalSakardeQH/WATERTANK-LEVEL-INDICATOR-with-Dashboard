@@ -21,7 +21,7 @@
 */
 
 /*
-  Water Tanks Monitor System (WTMS)                        firmware 2.10.1
+  Water Tanks Monitor System (WTMS)                        firmware 2.12.0
   ESP32 DevKit or ESP8266 NodeMCU + AJ-SR04M / JSN-SR04T + WS2812B strip (1-300 LEDs, set in the dashboard)
 
   - Each device is named in the dashboard: society / organisation, building, tank.
@@ -92,7 +92,7 @@
 #include "auth.h"
 #include "history.h"
 
-#define FW_VERSION  "2.10.1"
+#define FW_VERSION  "2.12.0"
 #define PRODUCT     "Water Tanks Monitor System"
 #define DEFAULT_LEDS 30
 #define MAX_LEDS     300

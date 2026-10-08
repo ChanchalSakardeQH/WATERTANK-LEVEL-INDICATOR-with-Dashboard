@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Keep classic (non edge-to-edge) layout on Android 15 so bars never cover the toolbar -->
+    <style name="Theme.Wtms" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/brand_teal</item>
+        <item name="colorSecondary">@color/brand_teal_light</item>
+        <item name="colorTertiary">@color/brand_red</item>
+        <item name="android:statusBarColor">@color/brand_teal</item>
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+</resources>

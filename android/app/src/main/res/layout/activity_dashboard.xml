@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent" android:layout_height="?attr/actionBarSize"
+        android:background="@color/brand_teal"
+        app:titleTextColor="@color/white" app:subtitleTextColor="@color/white" />
+    <com.google.android.material.progressindicator.LinearProgressIndicator
+        android:id="@+id/progress"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:indeterminate="true" android:visibility="gone" />
+    <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+        <WebView android:id="@+id/web" android:layout_width="match_parent" android:layout_height="match_parent" />
+        <LinearLayout
+            android:id="@+id/errorPanel"
+            android:layout_width="match_parent" android:layout_height="match_parent"
+            android:orientation="vertical" android:gravity="center" android:padding="32dp"
+            android:background="?android:attr/colorBackground" android:visibility="gone">
+            <TextView android:id="@+id/errorText" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:gravity="center" android:textAppearance="?attr/textAppearanceBodyLarge" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/retry" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginTop="20dp" android:text="@string/retry" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/wifiSettings" style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="@string/wifi_settings" />
+        </LinearLayout>
+    </FrameLayout>
+</LinearLayout>

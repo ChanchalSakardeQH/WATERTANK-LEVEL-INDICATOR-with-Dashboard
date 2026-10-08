@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:orientation="vertical" android:paddingHorizontal="24dp" android:paddingTop="12dp">
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="@string/address_hint">
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/address" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:inputType="textUri" android:text="192.168.4.1" />
+    </com.google.android.material.textfield.TextInputLayout>
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="8dp" android:hint="@string/name_hint">
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/name" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:inputType="textCapWords" />
+    </com.google.android.material.textfield.TextInputLayout>
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="8dp" android:hint="@string/remote_hint">
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/remote" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:inputType="textUri" />
+    </com.google.android.material.textfield.TextInputLayout>
+</LinearLayout>

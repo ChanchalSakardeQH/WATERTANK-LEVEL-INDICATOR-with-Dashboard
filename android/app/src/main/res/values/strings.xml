@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Water Tanks Monitor</string>
+    <string name="brand">woodyouloveit.com</string>
+    <string name="add_device">Add tank</string>
+    <string name="scan">Find tanks</string>
+    <string name="alerts">Notifications</string>
+    <string name="about">About</string>
+    <string name="refresh">Refresh</string>
+    <string name="reload">Reload</string>
+    <string name="open_browser">Open in browser</string>
+    <string name="retry">Try again</string>
+    <string name="wifi_settings">Wi-Fi settings</string>
+    <string name="empty_list">No tanks yet.\n\nTap \"Add tank\", or \"Find tanks\" to search your Wi-Fi.\nOn a device hotspot (WTMS-…), the address is 192.168.4.1.</string>
+    <string name="name_hint">Name (optional)</string>
+    <string name="address_hint">Address, e.g. 192.168.1.42 or 192.168.4.1</string>
+    <string name="channel_name">Tank alerts</string>
+    <string name="channel_desc">Low water, sensor faults and tanks that stop responding</string>
+    <string name="copyright">© 2026 Chanchal Sakarde. All Rights Reserved.\nOpen source under GPL-3.0.</string>
+    <string name="setup_title">Set up a new tank</string>
+    <string name="hint_admin_pw">Tank admin password</string>
+    <string name="hint_new_pw">New admin password (at least 6 characters)</string>
+    <string name="hint_new_pw2">Repeat the new password</string>
+    <string name="hint_org">Society / organisation (optional)</string>
+    <string name="hint_building">Building (optional)</string>
+    <string name="hint_tank">Tank (optional)</string>
+    <string name="scan_again">Scan again</string>
+    <string name="hint_ssid">Network name (SSID)</string>
+    <string name="hint_wifi_pw">Network password (empty for open networks)</string>
+    <string name="remote_hint">Remote address (optional), e.g. https://tanks.example.com</string>
+</resources>

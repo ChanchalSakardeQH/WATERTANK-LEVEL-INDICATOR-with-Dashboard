@@ -103,6 +103,9 @@ h3.sub{font-size:14px;margin:20px 0 6px;color:var(--text)}
 .modal h2{margin-top:0}
 .otaBar{height:10px;border-radius:999px;background:var(--input);border:1px solid var(--line);overflow:hidden;margin-top:12px}
 .otaBar i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+.sharePrev{white-space:pre-wrap;font-size:13px;line-height:1.5;max-height:200px;overflow:auto;background:var(--input);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:12px}
+.shareGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.shareGrid [hidden]{display:none}
+.btn.shWa{background:#1da851}
 .litres{font-size:15px;color:var(--muted);margin:-2px 0 8px;font-weight:600}
 .gstats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}.gstats .stat b{font-size:20px}
 .seg[id=segUsage]{margin-bottom:0}
@@ -211,8 +214,9 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
 
   <section class="card" id="cLevel">
     <h2 class="h2row"><span>WATER LEVEL</span>
+      <span style="display:flex;gap:6px"><button class="mini" onclick="openShare('level')" title="Share the water level">Share</button>
       <select id="unitSel" class="mini" title="Units on this device (browser)"><option value="">Units: default</option>
-        <option value="0">cm</option><option value="1">mm</option><option value="2">inch</option></select></h2>
+        <option value="0">cm</option><option value="1">mm</option><option value="2">inch</option></select></span></h2>
     <div class="hero">
       <div class="tank"><div class="water" id="water"></div></div>
       <div class="leds" id="leds" title="LED strip preview"></div>
@@ -438,6 +442,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
       <button class="btn" onclick="exportSettings()">Export settings</button>
       <button class="btn sec" onclick="$('fileImport').click()">Import settings</button>
     </div>
+    <div style="margin-top:10px"><button class="btn sec" onclick="openShare('settings')">Share settings by WhatsApp or email</button></div>
     <input type="file" id="fileImport" accept=".json,application/json" hidden onchange="importSettings(this)">
     <p class="help">The Settings ID also appears in PDF reports, so a report can be matched to the exported settings file.</p>
   </section>
@@ -495,6 +500,8 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
     <div class="kpis" id="kpis"></div>
     <div class="pdfrow">
       <button class="btn" id="btnPdf" onclick="exportPdf()">Download PDF report</button>
+      <button class="btn sec" onclick="openShare('report')">Share report</button>
+      <button class="btn sec" onclick="openShare('data')">Export data (CSV)</button>
       <p class="help">Last 7 days with charts, fills and night checks, branded with the woodyouloveit.com logo.
         On the hotspot's pop-up page, open the dashboard in your normal browser first so the download is allowed.</p>
     </div>
@@ -560,6 +567,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
       <div class="logbtns">
         <button class="btn sec small" onclick="loadLog()">Refresh</button>
         <button class="btn sec small" onclick="downloadLog()">Download</button>
+        <button class="btn sec small" onclick="openShare('log')">Share</button>
         <button class="btn danger small" onclick="clearLog()">Clear</button>
       </div>
     </div>
@@ -575,6 +583,18 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
     <a href="https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard" target="_blank" rel="noopener">Source code</a></div>
 </footer>
 <div class="toast" id="toast"></div>
+<div class="modal" id="shareModal"><div class="card"><h2 id="shareTitle">SHARE</h2>
+  <div class="sharePrev" id="shareMsg"></div>
+  <div class="shareGrid">
+    <button class="btn" id="shSystem" onclick="shareDo('system')" hidden>Share…</button>
+    <button class="btn shWa" id="shWa" onclick="shareDo('whatsapp')">WhatsApp</button>
+    <button class="btn" id="shMail" onclick="shareDo('email')">Email</button>
+    <button class="btn sec" id="shDl" onclick="shareDo('download')">Download</button>
+    <button class="btn sec" id="shCopy" onclick="shareDo('copy')">Copy text</button>
+  </div>
+  <p class="help" id="shareNote" style="margin-top:10px"></p>
+  <div style="margin-top:12px"><button class="btn sec" onclick="closeShare()">Close</button></div>
+</div></div>
 <div class="modal" id="loginModal"><div class="card"><h2>ADMIN LOGIN</h2>
   <div class="field"><label for="inPw">Password</label><input type="password" id="inPw" autocomplete="current-password"></div>
   <p class="help" id="loginErr" style="color:var(--danger)"></p>
@@ -894,14 +914,7 @@ function settingsObj(){const s=st,p=s.profile||{};return {
   updateRate:{profile:['eco','balanced','responsive','custom'][s.rate.profile],sensorSeconds:s.rate.customSensorMs/1000,dashboardSeconds:s.rate.customRefreshS}};}
 // Short fingerprint of the settings (not of the export time), shown in reports and exported files
 function settingsId(){return sha256(JSON.stringify(settingsObj())).slice(0,8).toUpperCase();}
-function exportSettings(){
-  const n=new Date(),o={format:'wtms-settings',version:1,settingsId:settingsId(),exported:n.toISOString(),
-    firmware:st.fw,board:st.board,device:st.wifi.host,note:'Wi-Fi and admin passwords are not included.',
-    homeWifi:st.wifi.saved||'',...settingsObj()};
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(o,null,2)+'\n'],{type:'application/json'}));
-  a.download=`wtms-settings-${fileTag()}${n.getFullYear()}${pad(n.getMonth()+1)}${pad(n.getDate())}.json`;
-  document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);
-  toast(`Settings exported (ID ${o.settingsId})`);}
+function exportSettings(){const r=settingsFile();saveBlob(r.blob,r.name);toast(`Settings exported (ID ${r.id})`);}
 async function importSettings(input){
   const f=input.files[0];input.value='';if(!f)return;
   let o;try{o=JSON.parse(await f.text());}catch(e){toast('Not a valid settings file',true);return;}
@@ -981,6 +994,114 @@ async function otaPick(input){
           toast(`Firmware updated to ${s.fw}`);if(!s.auth.admin)setToken('');render();return;}}catch(e){}}
     otaBusy=false;$('btnOta').disabled=false;$('otaMsg').textContent='The device has not come back yet. Check its power and Wi-Fi, then reload this page.';};
   xhr.send(fd);
+}
+
+// ---- Native Android app bridge (Water Tanks Monitor app): real file saving and sharing ----
+const APP=window.WTMSApp||null;
+function blobToB64(blob){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=rej;r.readAsDataURL(blob);});}
+
+// ---- Files: build once, then download or share ----
+const dstamp=t=>{const n=new Date();return `${n.getFullYear()}${pad(n.getMonth()+1)}${pad(n.getDate())}`+(t?`-${pad(n.getHours())}${pad(n.getMinutes())}`:'');};
+function saveBlob(blob,name){
+  if(APP){blobToB64(blob).then(b=>APP.saveFile(name,blob.type||'application/octet-stream',b));return;}
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;
+  document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1500);}
+function settingsFile(){const o={format:'wtms-settings',version:1,settingsId:settingsId(),exported:new Date().toISOString(),
+    firmware:st.fw,board:st.board,device:st.wifi.host,note:'Wi-Fi and admin passwords are not included.',
+    homeWifi:st.wifi.saved||'',...settingsObj()};
+  return {blob:new Blob([JSON.stringify(o,null,2)+'\n'],{type:'application/json'}),name:`wtms-settings-${fileTag()}${dstamp()}.json`,id:o.settingsId};}
+function logFile(){
+  const lines=logRows.map(e=>{const d=entryTime(e);
+    const t=d?`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+             :`boot#${e.boot} +${upStr(e.up)}`;
+    return `${t}\t${e.lvl}\t${e.cat}\t${e.msg}`;});
+  const head=(st?`Water Tanks Monitor System log · ${siteLine()||'site not named'}\nfirmware ${st.fw} · ${st.board} · ${st.wifi.host}.local · downloaded ${new Date().toString()}\n`:'')+
+    `woodyouloveit.com · © 2026 Chanchal Sakarde. All Rights Reserved.\n\n`;
+  return {blob:new Blob([head+lines.join('\n')+'\n'],{type:'text/plain'}),name:`wtms-log-${fileTag()}${dstamp(true)}.txt`};}
+async function pdfFile(){if(!aLoaded)await loadAnalytics();if(!ana||!st)throw new Error('No analytics data yet');
+  return {blob:buildReport(await logoJpeg()),name:`wtms-report-${fileTag()}${dstamp()}.pdf`};}
+// Level history and fills as CSV (opens in Excel / Google Sheets)
+async function csvFile(){if(!aLoaded)await loadAnalytics();if(!hist.length)throw new Error('No level history recorded yet');
+  const u=ul(),cap=st.capacity,q=v=>`"${String(v).replace(/"/g,'""')}"`;
+  const ds=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`,ts=d=>`${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const out=[`${q('Water Tanks Monitor System · '+(siteLine()||'site not named'))}`,`${q('Exported '+new Date().toLocaleString()+' · firmware '+st.fw+' · settings ID '+settingsId())}`,'',
+    ['Date','Time',`Distance (${u})`,'Level %'].concat(cap?['Litres']:[],['Filling']).join(',')];
+  for(const r of hist){if(r.mm===null)continue;const d=new Date(r.t*1000),p=Math.max(0,Math.min(100,pctOf(r.mm)));
+    out.push([ds(d),ts(d),(r.mm/10*UN().f).toFixed(ul()==='mm'?0:ul()==='in'?2:1),p.toFixed(1)].concat(cap?[Math.round(cap*p/100)]:[],[r.fill?'yes':'no']).join(','));}
+  out.push('','Fills (motor runs)',['Start date','Start time','Minutes',cap?'Litres added':'Level added %'].join(','));
+  for(const f of fills){const d=new Date(f.s*1000),add=(f.smm-f.emm);
+    out.push([ds(d),ts(d),Math.round((f.e-f.s)/60),cap?Math.round(add*lpm()):(add/spanMm()*100).toFixed(1)].join(','));}
+  return {blob:new Blob(['\ufeff'+out.join('\r\n')+'\r\n'],{type:'text/csv'}),name:`wtms-data-${fileTag()}${dstamp()}.csv`,rows:hist.length};}
+
+// ---- Share texts (WhatsApp *bold* is removed for email) ----
+const sentence=s=>s.charAt(0)+s.slice(1).toLowerCase();
+const footer='Water Tanks Monitor System · woodyouloveit.com';
+function headLine(){return `*${tankTitle()||'Water tank'}*${st.site.org?' · '+st.site.org:''}`;}
+function fileLine(name,attached){return name?(attached?`Attached: ${name}`:`File: ${name} (attach it from Downloads)`):'';}
+const SHARE={
+  level:()=>({title:'Share water level',subject:`Water level: ${tankTitle()||'tank'}`,text:()=>{const s=st,cap=s.capacity,L=[headLine()];
+    if(s.valid){L.push(`Water level: ${Math.round(s.level)}%`+(cap?` (≈ ${Math.round(cap*s.level/100).toLocaleString()} L of ${cap.toLocaleString()} L)`:''));
+      L.push(s.filling?`Filling now, rising ${fmtRate(s.fillRate)}`+(s.fillEta>=0?`, full in about ${dur(s.fillEta)}`:''):'Motor off');
+      if(s.level<s.lowAlarm)L.push(`Low water: below the ${s.lowAlarm}% alarm`);}
+    else L.push('Sensor fault: no echo from the level sensor');
+    L.push(`As of ${new Date().toLocaleString()}`,'',footer);return L.join('\n');}}),
+  report:()=>({title:'Share analytics report',subject:`Tank analytics report: ${tankTitle()||'tank'}`,make:pdfFile,text:(n,att)=>{const now=new Date(),from=new Date(now-7*864e5);
+    const L=[headLine(),`Tank analytics, last 7 days (${from.toLocaleDateString()} – ${now.toLocaleDateString()})`];
+    if(ana)for(const [,lab,val,sub] of ana.k)L.push(`• ${sentence(lab)}: ${val}${sub?' ('+sub+')':''}`);
+    L.push(`Settings ID: ${settingsId()}`,fileLine(n,att),'',footer);return L.filter((x,i)=>x!==''||i>0).join('\n');}}),
+  data:()=>({title:'Share level data (CSV)',subject:`Level data: ${tankTitle()||'tank'}`,make:csvFile,text:(n,att)=>{const v=hist.filter(r=>r.mm!==null);
+    const f=v.length?new Date(v[0].t*1000).toLocaleDateString():'',t=v.length?new Date(v[v.length-1].t*1000).toLocaleDateString():'';
+    return [headLine(),`Level data: ${v.length.toLocaleString()} readings (every 2 min) from ${f} to ${t}, and ${fills.length} fills.`,
+      'Opens in Excel or Google Sheets.',fileLine(n,att),'',footer].join('\n');}}),
+  log:()=>({title:'Share connectivity log',subject:`Connectivity log: ${tankTitle()||'tank'}`,make:async()=>{await loadLog();return logFile();},text:(n,att)=>{
+    const c=fn=>logRows.filter(fn).length;
+    return [headLine(),`Connectivity log: ${logRows.length} events, ${c(e=>e.cat==='boot'&&e.msg.startsWith('Boot #'))} restarts, ${c(e=>e.lvl==='W')} warnings, ${c(e=>e.lvl==='E')} errors.`,
+      `Firmware ${st.fw} on ${st.board}.`,fileLine(n,att),'',footer].join('\n');}}),
+  settings:()=>({title:'Share settings backup',subject:`Settings backup: ${tankTitle()||'tank'}`,make:async()=>settingsFile(),text:(n,att)=>[headLine(),
+    `Settings backup, Settings ID ${settingsId()}, firmware ${st.fw}.`,'No Wi-Fi or admin passwords are included.',fileLine(n,att),'',footer].join('\n')})};
+
+// ---- Share window ----
+let shareIt=null,shareRes=null;
+const isMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+function shareFileObj(){return shareRes?new File([shareRes.blob],shareRes.name,{type:shareRes.blob.type}):null;}
+function canSystemShare(){if(APP)return true;if(!navigator.share||!window.isSecureContext)return false;const f=shareFileObj();
+  return f?!!(navigator.canShare&&navigator.canShare({files:[f]})):true;}
+async function openShare(kind){
+  shareIt=SHARE[kind]();shareRes=null;
+  $('shareTitle').textContent=shareIt.title.toUpperCase();$('shareMsg').textContent='Preparing…';$('shareNote').textContent='';
+  ['shSystem','shWa','shMail','shDl','shCopy'].forEach(id=>$(id).disabled=true);
+  $('shareModal').classList.add('show');
+  try{
+    if(shareIt.make)shareRes=await shareIt.make();
+    const sys=canSystemShare();
+    $('shareMsg').textContent=shareIt.text(shareRes&&shareRes.name,sys);
+    $('shSystem').hidden=!sys;$('shDl').hidden=!shareRes;
+    $('shareNote').textContent=APP?(shareRes?'Share, WhatsApp and Email attach the file directly.':''):shareRes?(sys?'Share attaches the file directly. WhatsApp and Email below send the summary and download the file to attach.':
+      'WhatsApp and Email open with this summary, and the file is downloaded at the same time so you can attach it. '+
+      '(Browsers only attach files directly on https:// addresses.)'):'';
+    ['shSystem','shWa','shMail','shDl','shCopy'].forEach(id=>$(id).disabled=false);
+  }catch(e){$('shareMsg').textContent=e.message||'Could not prepare the file.';$('shCopy').disabled=true;}
+}
+function closeShare(){$('shareModal').classList.remove('show');}
+function copyText(t){
+  const fb=()=>{const ta=document.createElement('textarea');ta.value=t;ta.setAttribute('readonly','');ta.style.position='absolute';ta.style.left='-9999px';
+    document.body.appendChild(ta);ta.select();let ok=false;try{ok=document.execCommand('copy');}catch(e){}ta.remove();toast(ok?'Text copied':'Copy is not supported here',!ok);};
+  if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(t).then(()=>toast('Text copied'),fb);else fb();}
+function shareDo(how){
+  const it=shareIt,f=shareFileObj();if(!it)return;
+  if(APP&&how!=='download'&&how!=='copy'){                 // the app attaches the file itself
+    const send=b=>APP.share(how==='system'?'any':how,f?f.name:'',f?(shareRes.blob.type||'application/octet-stream'):'',b||'',it.text(f&&f.name,true),it.subject);
+    if(f)blobToB64(shareRes.blob).then(send);else send('');return;}
+  if(how==='system'){const txt=it.text(f&&f.name,true);
+    navigator.share(f?{files:[f],title:it.subject,text:txt}:{title:it.subject,text:txt}).catch(()=>{});return;}
+  const txt=it.text(f&&f.name,false);
+  if(how==='download'){saveBlob(shareRes.blob,shareRes.name);toast('Downloaded '+shareRes.name);return;}
+  if(how==='copy'){copyText(txt);return;}
+  if(shareRes)saveBlob(shareRes.blob,shareRes.name);          // ready to attach
+  let url;
+  if(how==='whatsapp')url=(isMobile?'whatsapp://send?text=':'https://wa.me/?text=')+encodeURIComponent(txt);
+  else url='mailto:?subject='+encodeURIComponent(it.subject)+'&body='+encodeURIComponent(txt.replace(/\*/g,''));
+  setTimeout(()=>{if(how==='whatsapp'&&!isMobile)window.open(url,'_blank');else location.href=url;},shareRes?400:0);
 }
 
 // ---- Site identity ----
@@ -1161,16 +1282,7 @@ function renderLog(){
     const m=document.createElement('span');m.className='msg';m.textContent=e.msg;
     r.append(t,g,m);frag.appendChild(r);});
   box.appendChild(frag);}
-function downloadLog(){
-  const lines=logRows.map(e=>{const d=entryTime(e);
-    const t=d?`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-             :`boot#${e.boot} +${upStr(e.up)}`;
-    return `${t}\t${e.lvl}\t${e.cat}\t${e.msg}`;});
-  const head=(st?`Water Tanks Monitor System log · ${siteLine()||'site not named'}\nfirmware ${st.fw} · ${st.board} · ${st.wifi.host}.local · downloaded ${new Date().toString()}\n`:'')+
-    `woodyouloveit.com · © 2026 Chanchal Sakarde. All Rights Reserved.\n\n`;
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([head+lines.join('\n')+'\n'],{type:'text/plain'}));
-  const n=new Date();a.download=`wtms-log-${fileTag()}${n.getFullYear()}${pad(n.getMonth()+1)}${pad(n.getDate())}-${pad(n.getHours())}${pad(n.getMinutes())}.txt`;
-  document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);}
+function downloadLog(){const r=logFile();saveBlob(r.blob,r.name);}
 async function clearLog(){if(!await ask('Clear the connectivity log? This cannot be undone.'))return;
   await post('/api/log/clear');loadLog();}
 
@@ -1630,10 +1742,7 @@ async function exportPdf(){
   try{
     if(!aLoaded)await loadAnalytics();
     if(!ana||!st){toast('No analytics data yet',true);return;}
-    const blob=buildReport(await logoJpeg()),n=new Date();
-    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
-    a.download=`wtms-report-${fileTag()}${n.getFullYear()}${pad(n.getMonth()+1)}${pad(n.getDate())}.pdf`;
-    document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1500);
+    const r=await pdfFile();saveBlob(r.blob,r.name);
     toast('PDF report downloaded');
   }catch(e){console.error(e);toast('Could not build the report',true);}
   finally{b.disabled=false;b.textContent='Download PDF report';}

@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent" android:layout_height="?attr/actionBarSize"
+        android:background="@color/brand_teal" app:title="@string/setup_title"
+        app:titleTextColor="@color/white" app:navigationIcon="@drawable/ic_back" />
+    <com.google.android.material.progressindicator.LinearProgressIndicator
+        android:id="@+id/busy"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:indeterminate="true" android:visibility="gone" />
+
+    <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:padding="20dp">
+            <TextView android:id="@+id/stepNo" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="@color/brand_teal" android:textAppearance="?attr/textAppearanceLabelLarge" />
+            <TextView android:id="@+id/stepTitle" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginTop="4dp" android:textAppearance="?attr/textAppearanceTitleLarge" />
+            <TextView android:id="@+id/stepText" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="8dp" android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+            <!-- Step: admin login (and new password for a new tank) -->
+            <LinearLayout android:id="@+id/secLogin" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:layout_marginTop="16dp" android:visibility="gone">
+                <com.google.android.material.textfield.TextInputLayout android:id="@+id/tilPw"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:hint="@string/hint_admin_pw" app:endIconMode="password_toggle">
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/inPw"
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textPassword" />
+                </com.google.android.material.textfield.TextInputLayout>
+                <LinearLayout android:id="@+id/secNewPw" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:visibility="gone">
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp"
+                        android:hint="@string/hint_new_pw" app:endIconMode="password_toggle">
+                        <com.google.android.material.textfield.TextInputEditText android:id="@+id/inNewPw"
+                            android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textPassword" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp"
+                        android:hint="@string/hint_new_pw2" app:endIconMode="password_toggle">
+                        <com.google.android.material.textfield.TextInputEditText android:id="@+id/inNewPw2"
+                            android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textPassword" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Step: names -->
+            <LinearLayout android:id="@+id/secName" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:layout_marginTop="16dp" android:visibility="gone">
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="@string/hint_org">
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/inOrg"
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textCapWords" android:maxLength="48" />
+                </com.google.android.material.textfield.TextInputLayout>
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:hint="@string/hint_building">
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/inBld"
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textCapWords" android:maxLength="32" />
+                </com.google.android.material.textfield.TextInputLayout>
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:hint="@string/hint_tank">
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/inTank"
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textCapWords" android:maxLength="32" />
+                </com.google.android.material.textfield.TextInputLayout>
+            </LinearLayout>
+
+            <!-- Step: home / society Wi-Fi -->
+            <LinearLayout android:id="@+id/secNet" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:layout_marginTop="12dp" android:visibility="gone">
+                <RadioGroup android:id="@+id/netGroup" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                <com.google.android.material.button.MaterialButton android:id="@+id/rescan"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/scan_again" />
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:hint="@string/hint_ssid">
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/inSsid"
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="text" android:maxLength="32" />
+                </com.google.android.material.textfield.TextInputLayout>
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp"
+                    android:hint="@string/hint_wifi_pw" app:endIconMode="password_toggle">
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/inWifiPw"
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textPassword" android:maxLength="63" />
+                </com.google.android.material.textfield.TextInputLayout>
+            </LinearLayout>
+
+            <TextView android:id="@+id/message" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="14dp" android:textColor="@color/bad" android:textAppearance="?attr/textAppearanceBodyMedium" />
+        </LinearLayout>
+    </ScrollView>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="end" android:padding="12dp">
+        <com.google.android.material.button.MaterialButton android:id="@+id/secondary"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content" android:layout_height="wrap_content" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/primary"
+            android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" />
+    </LinearLayout>
+</LinearLayout>

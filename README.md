@@ -23,6 +23,8 @@ One sketch runs on both **ESP32 DevKit V1 (30-pin)** and **NodeMCU ESP8266 (30-p
 - **One-tap calibration** from the dashboard ("Tank is EMPTY now" / "Tank is FULL now") or by typing distances
 - **Admin and viewer access**: anyone on the network sees Overview and Analytics; changing settings, logs, clearing history and restarting need the admin password
 - **Units**: mm, cm or inches for every measurement (device default, and each viewer can pick their own)
+- **Android app**: tank list with live levels, network discovery, the full dashboard, real file sharing and low-water notifications (see [android/README.md](android/README.md))
+- **Share by WhatsApp or email**: water level, PDF report, level data (CSV), connectivity log and settings backup, each with a ready-written summary
 - **Firmware update over Wi-Fi (OTA)** from the dashboard, with board and version checks
 - **Update rate profiles**: Eco (default: sensor every 5 s), Balanced, Responsive or Custom
 - **Settings backup**: export and import all settings as a file, with a Settings ID printed in reports
@@ -355,6 +357,29 @@ Setup → **Admin & backup**:
 The **Settings ID** is an 8-character fingerprint of those settings. It's shown in the Admin card, in the exported file, in the PDF report's details and footer, and in the report's **"Settings used for this report"** page.
 Anyone checking a report can confirm which configuration produced its figures by matching the ID with an exported settings file.
 
+## Sharing and downloads
+
+Every report and download can also be shared. Press **Share** to open a window with a ready-written summary and these buttons:
+
+| Button | What happens |
+|---|---|
+| Share… | The phone's own share sheet with the **file attached** (WhatsApp, Gmail, Drive…). Only shown when the dashboard is opened over **https://**, e.g. through Cloudflare Tunnel. |
+| WhatsApp | Opens WhatsApp with the summary filled in. The file downloads at the same time, ready to attach. |
+| Email | Opens the email app with subject and summary filled in. The file downloads at the same time, ready to attach. |
+| Download | Saves the file only |
+| Copy text | Copies the summary, for any other app |
+
+| What | Where | File | Who |
+|---|---|---|---|
+| Water level now | Overview → Water level card → Share | text only | everyone |
+| Analytics report | Analytics → Share report | PDF | everyone |
+| Level data | Analytics → Export data (CSV) | CSV: every 2-minute reading (date, time, distance, level %, litres, filling) and every fill; opens in Excel or Google Sheets | everyone |
+| Connectivity log | Log → Share | text file | admin |
+| Settings backup | Setup → Admin & backup → Share settings | JSON (no passwords) | admin |
+
+Phone browsers only hand files directly to other apps on secure (https://) pages. On the device's own `http://` address, WhatsApp and Email therefore send the summary and the file is downloaded for you to attach.
+On the device hotspot (no internet), WhatsApp keeps the message and sends it once the phone is back online.
+
 ## Update rate
 
 How often the sensor is read and how often an **open** dashboard refreshes (Setup → **Update rate**):
@@ -546,7 +571,10 @@ water-level-indicator/
 │   ├── sample_report.pdf           # Example PDF report (simulated data)
 │   └── gen_diagrams.py             # Regenerates the diagrams
 ├── tools/
+│   ├── build-android.ps1           # Android build, signing, install script
 │   └── sensor_diagnostic/          # Sensor wiring and mode test sketch
+├── android/                        # Native Android app (see android/README.md)
+├── build-android.bat               # Builds the Android app (menu)
 ├── CHANGELOG.md
 ├── LICENSE                         # GNU General Public License v3
 ├── README.md

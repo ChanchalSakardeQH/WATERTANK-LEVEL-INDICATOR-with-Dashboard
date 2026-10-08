@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand_teal">#0F766E</color>
+    <color name="brand_teal_light">#14B8A6</color>
+    <color name="brand_red">#E7004E</color>
+    <color name="ok">#16A34A</color>
+    <color name="warn">#D97706</color>
+    <color name="bad">#DC2626</color>
+    <color name="white">#FFFFFF</color>
+</resources>
