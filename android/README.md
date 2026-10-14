@@ -7,6 +7,7 @@ Native Android app for the Water Tanks Monitor System by [woodyouloveit.com](htt
 
 | Feature | Details |
 |---|---|
+| First start | While no tank is saved: an animated save-water mascot (a smiling water drop that bounces, blinks and sends up hearts), the woodyouloveit.com logo, a pulsing "Every drop counts" and rotating water-saving tips, with *Set up my first tank* and *Find tanks on this Wi-Fi*. Still when the phone's animations are off |
 | Compartments | Tanks with several sensors (firmware 3.0.0) show the whole tank plus a bar per compartment; alerts name the compartment |
 | Admin login | Per tank, in the dashboard menu: logs in with the tank's own admin password (challenge, the password is never sent), asks for a new password on a tank still using the default, and unlocks Setup and Log in the dashboard. Only the session token is kept; it is checked against the tank every time and dropped after the tank restarts or 12 h without use. Viewers without the password see Overview and Analytics only |
 | Automatic discovery | On Wi-Fi, when a saved tank doesn't answer or none are saved, the app searches the network by itself: tanks whose router address changed are updated, new tanks are offered with an Add button |

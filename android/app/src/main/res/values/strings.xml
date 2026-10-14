@@ -30,4 +30,19 @@
     <string name="remote_hint">Remote address (optional), e.g. https://tanks.example.com</string>
     <string name="admin_login">Admin login</string>
     <string name="admin_logout">Log out (admin)</string>
+    <string name="empty_title">Every drop counts</string>
+    <string name="empty_setup">Set up my first tank</string>
+    <string name="empty_find">Find tanks on this Wi-Fi</string>
+    <string name="empty_hint">Next to a new tank? Its own Wi-Fi is called WTMS-…: tap Set up my first tank, or Add tank → Open a tank\'s hotspot.</string>
+    <string name="empty_brand">♥ woodyouloveit.com · Save water, love your tank</string>
+    <string name="mascot_desc">A smiling water drop: every drop counts</string>
+    <string-array name="save_water_tips">
+        <item>Know your tank, save your water. Every drop counts.</item>
+        <item>A tap dripping once a second wastes about 30 litres a day. Fix leaks early.</item>
+        <item>Turning off the tap while brushing saves around 6 litres a minute.</item>
+        <item>An overflowing tank wastes water silently. Get an alert before it spills.</item>
+        <item>A level that drops at night can mean a hidden leak. Your tank is checked every night.</item>
+        <item>Run the motor only when the tank needs it: see the level before you switch on.</item>
+        <item>Water saved today is water for tomorrow.</item>
+    </string-array>
 </resources>

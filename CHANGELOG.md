@@ -7,6 +7,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added (Android app 1.3.0)
+- **First-start screen** while no tank is saved: the woodyouloveit.com logo, an animated save-water mascot drawn in code (`SaveWaterView`: a smiling water drop that bounces, blinks, holds moving waves and sends up hearts, with twinkling sparkles), a pulsing "Every drop counts", water-saving tips that change every few seconds, and the buttons *Set up my first tank* and *Find tanks on this Wi-Fi*. Animation runs only while on screen and stops when the phone's animations are turned off.
+
 ## [3.0.0] - 2026-10-14
 
 ### Added

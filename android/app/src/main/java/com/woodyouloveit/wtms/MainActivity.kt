@@ -11,7 +11,11 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.View
 import android.widget.ImageView
@@ -39,7 +43,24 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var adapter: DeviceAdapter
     private lateinit var swipe: SwipeRefreshLayout
-    private lateinit var empty: TextView
+    private lateinit var empty: View
+    private lateinit var emptyTip: TextView
+    private val tipHandler = Handler(Looper.getMainLooper())
+    private var tipIndex = 0
+    private var titlePulse: ObjectAnimator? = null
+    private val nextTip = object : Runnable {
+        override fun run() {
+            val tips = resources.getStringArray(R.array.save_water_tips)
+            tipIndex = (tipIndex + 1) % tips.size
+            if (ValueAnimator.areAnimatorsEnabled()) {
+                emptyTip.animate().alpha(0f).setDuration(250).withEndAction {
+                    emptyTip.text = tips[tipIndex]
+                    emptyTip.animate().alpha(1f).setDuration(350).start()
+                }.start()
+            } else emptyTip.text = tips[tipIndex]
+            tipHandler.postDelayed(this, 4500)
+        }
+    }
     private var devices = mutableListOf<Device>()
     private val workingAddress = mutableMapOf<String, String>()   // device id -> address that answered last
     private var lastAutoScan = 0L
@@ -72,6 +93,10 @@ class MainActivity : AppCompatActivity() {
         swipe = findViewById(R.id.swipe)
         swipe.setOnRefreshListener { refresh() }
         empty = findViewById(R.id.empty)
+        emptyTip = findViewById(R.id.emptyTip)
+        emptyTip.text = resources.getStringArray(R.array.save_water_tips)[0]
+        findViewById<View>(R.id.emptySetup).setOnClickListener { startActivity(Intent(this, SetupActivity::class.java)) }
+        findViewById<View>(R.id.emptyFind).setOnClickListener { scan() }
         findViewById<ExtendedFloatingActionButton>(R.id.fab).setOnClickListener { addChoices() }
 
         if (Build.VERSION.SDK_INT >= 33 && AlertSettings.enabled(this) &&
@@ -86,6 +111,7 @@ class MainActivity : AppCompatActivity() {
         adapter.submit(devices)
         adapter.setAdmins(AuthStore.ids(this))
         empty.visibility = if (devices.isEmpty()) View.VISIBLE else View.GONE
+        if (devices.isEmpty()) startEmptyAnimations() else stopEmptyAnimations()
         refresh()
         if (devices.isEmpty()) autoDiscover()
     }
@@ -155,6 +181,31 @@ class MainActivity : AppCompatActivity() {
             .putExtra(DashboardActivity.EXTRA_ADDRESS, workingAddress[d.id] ?: d.address)
             .putExtra(DashboardActivity.EXTRA_DEVICE_ID, d.id)
             .putExtra(DashboardActivity.EXTRA_TITLE, d.name.ifBlank { d.address }))
+    }
+
+    override fun onPause() {
+        stopEmptyAnimations()
+        super.onPause()
+    }
+
+    /** Rotating save-water tips and a gently pulsing headline while no tank is saved. */
+    private fun startEmptyAnimations() {
+        tipHandler.removeCallbacks(nextTip)
+        tipHandler.postDelayed(nextTip, 4500)
+        if (titlePulse == null && ValueAnimator.areAnimatorsEnabled()) {
+            val title = findViewById<View>(R.id.emptyTitle)
+            titlePulse = ObjectAnimator.ofPropertyValuesHolder(title,
+                android.animation.PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.07f),
+                android.animation.PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.07f)).apply {
+                duration = 900; repeatCount = ValueAnimator.INFINITE; repeatMode = ValueAnimator.REVERSE; start()
+            }
+        }
+    }
+
+    private fun stopEmptyAnimations() {
+        tipHandler.removeCallbacks(nextTip)
+        titlePulse?.cancel(); titlePulse = null
+        findViewById<View>(R.id.emptyTitle)?.apply { scaleX = 1f; scaleY = 1f }
     }
 
     // ---------------------------------------------------------------- add / edit

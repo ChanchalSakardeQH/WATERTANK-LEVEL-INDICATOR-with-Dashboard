@@ -20,11 +20,56 @@
                 android:id="@+id/list"
                 android:layout_width="match_parent" android:layout_height="match_parent"
                 android:clipToPadding="false" android:paddingTop="8dp" android:paddingBottom="96dp" />
-            <TextView
+            <!-- First start: no tanks yet. Animated save-water mascot, rotating tips and the next steps. -->
+            <androidx.core.widget.NestedScrollView
                 android:id="@+id/empty"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_gravity="center" android:gravity="center" android:padding="32dp"
-                android:text="@string/empty_list" android:textAppearance="?attr/textAppearanceBodyLarge" />
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:fillViewport="true">
+                <LinearLayout
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:gravity="center_horizontal"
+                    android:paddingHorizontal="28dp" android:paddingTop="20dp" android:paddingBottom="96dp">
+                    <ImageView
+                        android:layout_width="wrap_content" android:layout_height="40dp"
+                        android:adjustViewBounds="true" android:src="@drawable/brand_logo"
+                        android:contentDescription="@string/brand" />
+                    <com.woodyouloveit.wtms.SaveWaterView
+                        android:id="@+id/mascot"
+                        android:layout_width="230dp" android:layout_height="230dp"
+                        android:layout_marginTop="8dp"
+                        android:contentDescription="@string/mascot_desc" />
+                    <TextView
+                        android:id="@+id/emptyTitle"
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/empty_title" android:textColor="@color/brand_teal"
+                        android:textSize="26sp" android:textStyle="bold" />
+                    <TextView
+                        android:id="@+id/emptyTip"
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp" android:gravity="center" android:minLines="3"
+                        android:textAppearance="?attr/textAppearanceBodyLarge" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/emptySetup"
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="18dp" android:text="@string/empty_setup"
+                        app:icon="@drawable/ic_add" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/emptyFind"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/empty_find" app:icon="@drawable/ic_search" />
+                    <TextView
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp" android:gravity="center"
+                        android:text="@string/empty_hint" android:textAppearance="?attr/textAppearanceBodySmall" />
+                    <TextView
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:layout_marginTop="18dp"
+                        android:text="@string/empty_brand" android:textColor="@color/brand_red"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </androidx.core.widget.NestedScrollView>
         </FrameLayout>
     </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
     <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
