@@ -7,6 +7,9 @@ Native Android app for the Water Tanks Monitor System by [woodyouloveit.com](htt
 
 | Feature | Details |
 |---|---|
+| Compartments | Tanks with several sensors (firmware 3.0.0) show the whole tank plus a bar per compartment; alerts name the compartment |
+| Admin login | Per tank, in the dashboard menu: logs in with the tank's own admin password (challenge, the password is never sent), asks for a new password on a tank still using the default, and unlocks Setup and Log in the dashboard. Only the session token is kept; it is checked against the tank every time and dropped after the tank restarts or 12 h without use. Viewers without the password see Overview and Analytics only |
+| Automatic discovery | On Wi-Fi, when a saved tank doesn't answer or none are saved, the app searches the network by itself: tanks whose router address changed are updated, new tanks are offered with an Add button |
 | Set up a new tank | Wizard: connect to the tank's hotspot (Android shows the list of WTMS Wi-Fi) → admin login, replacing the default password → names → pick the home or society router **from the tank's own scan** → the tank joins and is saved under its new address |
 | Open a tank's hotspot | View any tank through its WTMS Wi-Fi without setting it up; mobile data stays on for other apps |
 | Remote address | Optional per tank (Cloudflare Tunnel https:// link or a VPN/Tailscale address); used automatically when the home address doesn't answer |
@@ -50,35 +53,27 @@ From the project root, double-click **`build-android.bat`** for the menu, or run
 ```bat
 build-android.bat -Task Debug -Install -Launch          :: debug APK, install on the USB phone, start it
 build-android.bat -Task Keystore                        :: first time only: create the release signing key
-build-android.bat -Task Release -VersionName 1.1.0 -VersionCode 2
+build-android.bat -Task Release                         :: asks for the new version, then builds the signed APK + AAB
+build-android.bat -Task Release -VersionName 1.2.0 -VersionCode 3
 build-android.bat -Task TestAab -Launch                 :: install the .aab the way Google Play does
-build-android.bat -Task Doctor                          :: check (and fix) Java, SDK, licence, phone, key
+build-android.bat -Task Doctor                          :: check and fix Java, SDK, licence, phone, key
 build-android.bat -Task Debug -Yes                      :: unattended: answer yes to set-up and fix questions
 build-android.bat -Task Debug -NoAutoFix                :: report problems only, change nothing
-build-android.bat -Task Release -DryRun                 :: show what would run
 ```
 
-**It sets itself up.** With your permission (or `-Yes`) the script installs what is missing:
-
-| Missing | What it does |
+| Item | Where |
 |---|---|
-| Java 17–23 | Uses Android Studio's own Java if present; otherwise downloads Java 17 (Eclipse Temurin, checksum-verified) to `%USERPROFILE%\.woodyouloveit\jdk-17` |
-| Android SDK | Downloads Google's command-line tools, asks you to accept the SDK licence, installs platform-tools, the Android platform this app compiles for (read from `compileSdk`, now API 35) and build tools |
-| SDK licence | Shows it and records your acceptance |
-| adb (phone install) | Installs platform-tools |
+| Your Android folder | Found by itself by walking up from the project (e.g. `D:\Android` with `Sdk`, `Android Studio` or `Gradle`); `SM_ANDROID_ROOT` overrides it |
+| SDK, Gradle cache, Java 21, tools | Inside that folder (`Sdk`, `Gradle`, `jdk-21`, `Tools`), or the standard Windows folders without one |
+| Release key | `<Android folder>\Keys\wtms-release.jks`. A key made by the earlier script in `%USERPROFILE%\.woodyouloveit` is used if it is there: **back it up with its password**, Google Play only accepts updates signed with the same key |
+| App version | `android\version.properties` (`versionName`, `versionCode`); the menu asks for a new one before a release |
+| Debug build | Installs beside the release app as **WTMS Debug** (`com.woodyouloveit.wtms.debug`) |
+| Outputs | `release\android\<version>\woodyouloveit-wtms-<version>-debug.apk`, `-release.apk`, `-release.aab`, `SHA256SUMS.txt`; logs in `release\logs\` |
 
-**It fixes common build failures and tries again:** licence not accepted, missing build tools or platform, SDK not found,
-wrong Java version, damaged Gradle download, stuck Gradle background processes, out of memory (raises Gradle to 4 GB),
-and network hiccups. Disk full, very long paths and HTTPS-inspecting proxies are explained with what to do.
-A real code error is reported with the log to send.
-
-The Gradle version (8.13) and the Android platform are read from the project, so the script follows the project when they change.
-The first build downloads Gradle and the Android libraries (a few hundred MB).
-
-Outputs go to `release\android\<version>\` (`woodyouloveit-wtms-<version>-debug.apk`, `-release.apk`, `-release.aab`) with `SHA256SUMS.txt`, and a log to `release\logs\` (passwords never appear in it).
-
-The release key is kept outside the project in `%USERPROFILE%\.woodyouloveit\wtms-release.jks`. **Back it up with its password**:
-Google Play only accepts updates signed with the same key. `-RememberPassword` stores the password encrypted for your Windows account only.
+**It sets itself up:** with your permission (or `-Yes`) it installs a missing Java 21, the Android SDK command-line tools,
+the SDK licence, platform-tools, the Android platform this app compiles for (read from `compileSdk`, API 35) and build tools.
+**It fixes common build failures and builds again:** licence, missing packages, SDK not found, wrong Java (Gradle 8.14.3 runs on Java 17–24),
+damaged Gradle download, stuck Gradle processes, out of memory, network hiccups. Disk full, long paths and HTTPS-inspecting proxies are explained.
 
 The project also opens directly in Android Studio (`android\` folder).
 

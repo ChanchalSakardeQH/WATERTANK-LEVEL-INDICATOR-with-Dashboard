@@ -7,6 +7,32 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-14
+
+### Added
+- **Several ultrasonic sensors, one per tank compartment** (e.g. a two-partition overhead tank): 1 to 4 on ESP32, 1 to 2 on NodeMCU, configurable in the new **Setup → Sensors & compartments** card (number in use, LED layout, name, capacity and water depth per compartment).
+  - ESP32 pins: sensor 1 D15/D2 (unchanged), 2 D32/D35, 3 D33/D34, 4 D25/D26. NodeMCU: sensor 1 D5/D6 (unchanged), 2 D7/D1. All sensors on 3V3.
+  - Sensors are read in turn, at least 70 ms apart (no cross-talk). Median filter, fault detection, fill detection and the fault log per sensor (the log names the sensor and its pins).
+  - LED strip: whole tank, one strip split per compartment (dark LED between), or one chained strip per compartment.
+  - Calibration per compartment (selector in the Calibration card); `/api/calibrate` takes `sensor`.
+  - Overview: tank drawn in compartments with level, litres and status each, plus the whole tank (litres-weighted when every compartment has a capacity).
+  - Analytics: *Whole tank* or one compartment for every chart, figure, night leak check and the PDF report; fills merged across compartments for the whole tank.
+  - CSV export: distance, level, litres and filling per compartment plus the whole tank; fills with their compartment.
+  - Share text, PDF settings page, settings export/import and the Tank at a glance card cover every compartment.
+  - `/api/status` adds `sensors[]`, `total`, `pins[]`, `ledMode`, `maxSensors` (top-level values describe the whole tank, so older apps keep working). New `POST /api/sensors`.
+- Wiring diagrams `docs/wiring_esp32_multi.svg` and `docs/wiring_esp8266_multi.svg`.
+- **Android app 1.2.0:** compartments on every tank card, alerts naming the compartment, **native admin login** per tank (challenge login, default password change, session checked on every open and handed to the dashboard), **automatic discovery** on Wi-Fi (tanks that moved address are updated, new tanks offered), debug build installs beside the release as "WTMS Debug".
+- Android build: new self-setting-up `tools/build-android.ps1` (finds the `D:\Android` folder, keys and Java there, version in `android/version.properties`, asks for the version before a release), Gradle 8.14.3 (Java 17–24); a release key made by the earlier script is still used.
+
+### Changed
+- History record: time, one distance per sensor, flags (one bit per sensor). With one sensor it is the same 8-byte record as before, so existing history stays. Fill records are 16 bytes with the sensor number; earlier fill records are converted on the first start.
+- Settings storage grows to 1 KB (sensors at offset 512). Earlier calibration and capacity become sensor 1 automatically.
+- **Defaults** no longer resets calibration (it lives with each sensor now).
+- NodeMCU firmware is now about 569 KB, above the ~500 KB OTA limit of that board: update NodeMCU devices by USB. ESP32 (1.08 MB) still updates over Wi-Fi.
+
+### Fixed
+- Dashboard: a hidden block could stay visible because a CSS display rule overrode `hidden`.
+
 ### Added (Android app 1.1.0, works with firmware 2.9.0 and newer)
 - **Set up a new tank** wizard: connect to the tank's hotspot through Android's Wi-Fi picker (WTMS… networks, app-only connection on Android 10+, in-app list on Android 8–9) → challenge-response admin login with a forced change of the default password → optional names → choose the home or society Wi-Fi from the tank's own scan → wait for the join → switch the phone back and save the tank under its new address (found by mDNS host name if needed). If the names changed, the tank is restarted once.
 - **Open a tank's hotspot**: view a tank through its WTMS Wi-Fi without setting it up.
@@ -291,7 +317,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - `STRIP_REVERSED` option for strips mounted top-down.
 - Startup sweep animation.
 
-[Unreleased]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.12.0...HEAD
+[Unreleased]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.12.0...v3.0.0
 [2.12.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.11.0...v2.12.0
 [2.11.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.10.1...v2.11.0
 [2.10.1]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.10.0...v2.10.1

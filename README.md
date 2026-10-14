@@ -13,6 +13,8 @@ One sketch runs on both **ESP32 DevKit V1 (30-pin)** and **NodeMCU ESP8266 (30-p
 
 ## Features
 
+- **Several sensors (firmware 3.0.0):** 1 to 4 ultrasonic sensors on an ESP32 (2 on a NodeMCU), one per tank compartment, e.g. a two-partition overhead tank. Whole-tank and per-compartment levels, litres, analytics, alarms and LED bars
+
 - **Web dashboard** for desktop and mobile browsers: live level, calibration, display settings, Wi-Fi settings
 - **Usage & tank setup**: Domestic or Commercial, tank location (overhead, loft/bathroom, underground sump), shape and size, with loft tank presets and recommended settings for each
 - **Calibration without emptying the tank**: slide to how full the tank is now, or enter measurements. The water depth does the rest.
@@ -100,6 +102,33 @@ The AJ-SR04M is rated for 3.0–5.5V. Powered from the NodeMCU's 3V3 pin, its ec
 ![NodeMCU ESP8266 3.3V wiring diagram](docs/wiring_esp8266_3v3.svg)
 
 > **Warning:** In this setup the sensor's 5V pin must go to **3V3 only**. Connecting it to the 5V supply would put 5V straight into D6.
+
+### Several sensors: one per tank compartment (firmware 3.0.0)
+
+A partitioned tank gets one sensor per compartment. The pins are fixed by the firmware; choose how many are in use in **Setup → Sensors & compartments**.
+
+| Sensor | ESP32 TRIG → sensor RX | ESP32 ECHO ← sensor TX | NodeMCU TRIG / ECHO |
+|---|---|---|---|
+| 1 | D15 | D2 | D5 (GPIO14) / D6 (GPIO12) |
+| 2 | D32 | D35 | D7 (GPIO13) / D1 (GPIO5) |
+| 3 | D33 | D34 | — |
+| 4 | D25 | D26 | — |
+
+- Every sensor: its **"5V" pin → 3V3** and **GND → GND**. The ESP32 board has one 3V3 pin, so join the power wires on a small terminal strip.
+- The pins avoid every boot-sensitive pin. ESP32 GPIO36/39 (VP/VN) are not used, because they can glitch while Wi-Fi is on and cut echo timings short.
+- Sensors are read one at a time, at least 70 ms apart, so one sensor never hears another's echo.
+
+![ESP32 with up to 4 sensors](docs/wiring_esp32_multi.svg)
+
+![NodeMCU with 2 sensors](docs/wiring_esp8266_multi.svg)
+
+**LED strip with several compartments** (Sensors & compartments → *LED strip shows*):
+
+| Choice | What the strip shows |
+|---|---|
+| Whole tank, one bar | The combined level (litres-weighted when every compartment has a capacity) |
+| Split strip, one bar each | One strip divided into a bar per compartment, sensor 1 at the bottom, with a dark LED between bars |
+| One strip per compartment | Strips chained DOUT → DIN, set the total LED count; each strip shows one compartment |
 
 ### Why the extra parts
 
@@ -277,6 +306,21 @@ Each method previews the result and warns if the full water line is inside the s
 Loft tanks are only 385–685 mm tall, so a sensor mounted flat on the lid would miss the top half of the tank.
 Mount it on a **stand pipe at least 25 cm tall and 75 mm wide** over the manhole, so the full water line is 25 cm or more below the sensor face.
 On a shallow tank, 1 cm of water is about 2.5% of the tank (≈ 6 L in a 225 L loft tank). That's the resolution you can expect.
+
+## Sensors & compartments (Setup tab)
+
+| Setting | What it does |
+|---|---|
+| Sensors in use | 1 (one tank) to 4 (ESP32) or 2 (NodeMCU). Changing the number **clears the level history and fills**, because each record holds one reading per sensor: download a PDF or the CSV first |
+| LED strip shows | Whole tank, split strip, or one strip per compartment (see Wiring) |
+| Name, capacity, water depth (per compartment) | Shown everywhere; capacity gives litres, water depth drives the calibration slider |
+
+- **Calibration** has a selector for the compartment; each sensor is calibrated on its own (slider, measurements, or Empty/Full).
+- **Overview** shows the tank split into compartments, each with level, litres and status, plus the whole tank.
+- **Analytics** has a selector: *Whole tank* or one compartment. Every chart, figure, the night leak check and the PDF report follow it.
+- **Whole tank** = litres of all compartments added up when every compartment has a capacity, otherwise the average level.
+- **Alarms** (low water, sensor fault, filling) name the compartment.
+- Upgrading from 2.x: the existing calibration and capacity become sensor 1, and the history stays.
 
 ## How it works
 
@@ -522,6 +566,8 @@ Before that, events show as `Boot #N +h:mm:ss` (time since that start).
 | Serial shows `esp_littlefs ... Corrupted dir pair` or `mount failed (-84)` (firmware 2.8.0 and older) | The flash storage was blank, usually because **Erase All Flash Before Sketch Upload** is Enabled. The firmware formats it automatically. Set that option to Disabled so settings survive uploads. |
 | Settings, Wi-Fi or calibration lost after an upload | **Tools → Erase All Flash Before Sketch Upload** must be **Disabled** (ESP32), or **Erase Flash: Only Sketch** (NodeMCU). |
 | Hotspot doesn't appear | In on-demand mode it's off until you press **BOOT** (ESP32) or **FLASH** (NodeMCU). The top LED blinks blue when it's on. |
+| One compartment shows "no echo" | Check that sensor's TRIG/ECHO pins (table in Wiring) and its 3V3/GND; the log names the sensor and its pins. A sensor beyond the count in *Sensors in use* is not read |
+| History empty after changing the number of sensors | Expected: the history is cleared when the number of sensors changes |
 | Board gets hot | Turn on **Power saving**, set the hotspot to **On demand**, and lower the transmit power. See "Power, heat and production use". |
 | Dashboard unreachable after changing the router | Wait about 20 seconds: the hotspot turns on by itself. Connect to it and choose the new network in Wi-Fi settings. |
 | ESP8266 won't boot with the circuit connected | Make sure nothing is connected to D3, D4 or D8 |

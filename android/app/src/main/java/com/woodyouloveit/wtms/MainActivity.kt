@@ -12,6 +12,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -27,6 +28,7 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -40,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var empty: TextView
     private var devices = mutableListOf<Device>()
     private val workingAddress = mutableMapOf<String, String>()   // device id -> address that answered last
+    private var lastAutoScan = 0L
 
     private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (!granted) toast("Notifications are off for this app. You can turn them on in Android settings.")
@@ -81,8 +84,10 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         devices = DeviceStore.load(this)
         adapter.submit(devices)
+        adapter.setAdmins(AuthStore.ids(this))
         empty.visibility = if (devices.isEmpty()) View.VISIBLE else View.GONE
         refresh()
+        if (devices.isEmpty()) autoDiscover()
     }
 
     /** Check every saved tank at once. */
@@ -90,6 +95,7 @@ class MainActivity : AppCompatActivity() {
         if (devices.isEmpty()) { swipe.isRefreshing = false; return }
         swipe.isRefreshing = true
         lifecycleScope.launch {
+            val results = mutableMapOf<String, Boolean>()
             devices.map { d ->
                 async {
                     adapter.setStatus(d.id, null)
@@ -97,16 +103,57 @@ class MainActivity : AppCompatActivity() {
                     val s = r.status
                     workingAddress[d.id] = r.address
                     adapter.setStatus(d.id, s, r.viaRemote)
+                    results[d.id] = s.reachable
                     if (s.reachable && s.host.isNotBlank() && s.host != d.host) { d.host = s.host; DeviceStore.save(this@MainActivity, devices) }
                 }
             }.awaitAll()
             swipe.isRefreshing = false
+            if (results.values.any { !it }) autoDiscover()
+        }
+    }
+
+    /**
+     * On Wi-Fi, look for tanks by themselves: when a saved tank doesn't answer (its router address may have
+     * changed) or no tank is saved yet. Moved tanks are updated by host name; new ones are offered to add.
+     */
+    private fun autoDiscover() {
+        if (NetUtil.wifiNetwork(this) == null) return
+        if (SystemClock.elapsedRealtime() - lastAutoScan < 60_000 && lastAutoScan != 0L) return
+        lastAutoScan = SystemClock.elapsedRealtime()
+        val found = linkedMapOf<String, TankStatus>()
+        val discovery = Discovery(this) { _, ip ->
+            if (found.containsKey(ip)) return@Discovery
+            lifecycleScope.launch {
+                val s = StatusClient.fetch(this@MainActivity, ip, 3000)
+                if (s.reachable) found[ip] = s
+            }
+        }
+        discovery.start()
+        lifecycleScope.launch {
+            delay(6000)
+            discovery.stop()
+            var moved = 0
+            for ((ip, s) in found) {
+                devices.firstOrNull { it.host.isNotBlank() && it.host == s.host && it.address != ip && it.address != HotspotLink.ADDRESS }
+                    ?.let { it.address = ip; moved++ }
+            }
+            if (moved > 0) { DeviceStore.save(this@MainActivity, devices); toast("Found $moved tank(s) at a new address"); onResume() }
+            val fresh = found.filter { (ip, s) -> devices.none { it.address == ip || (it.host.isNotBlank() && it.host == s.host) } }
+            if (fresh.isEmpty()) return@launch
+            val names = fresh.values.joinToString(", ") { it.title.ifBlank { it.host } }
+            Snackbar.make(swipe, "Found ${fresh.size} new tank(s) on this Wi-Fi: $names", Snackbar.LENGTH_INDEFINITE)
+                .setAction("Add") {
+                    fresh.forEach { (ip, s) -> devices.add(Device(name = s.title.ifBlank { ip }, address = ip, host = s.host)) }
+                    DeviceStore.save(this@MainActivity, devices); onResume()
+                }
+                .show()
         }
     }
 
     private fun openDashboard(d: Device) {
         startActivity(Intent(this, DashboardActivity::class.java)
             .putExtra(DashboardActivity.EXTRA_ADDRESS, workingAddress[d.id] ?: d.address)
+            .putExtra(DashboardActivity.EXTRA_DEVICE_ID, d.id)
             .putExtra(DashboardActivity.EXTRA_TITLE, d.name.ifBlank { d.address }))
     }
 
@@ -202,7 +249,9 @@ class MainActivity : AppCompatActivity() {
                     3 -> MaterialAlertDialogBuilder(this)
                         .setMessage("Remove ${d.name.ifBlank { d.address }} from this app? The device itself is not changed.")
                         .setNegativeButton("Cancel", null)
-                        .setPositiveButton("Remove") { _, _ -> devices.removeAll { it.id == d.id }; DeviceStore.save(this, devices); onResume() }
+                        .setPositiveButton("Remove") { _, _ ->
+                            devices.removeAll { it.id == d.id }; AuthStore.clear(this, d.id); DeviceStore.save(this, devices); onResume()
+                        }
                         .show()
                 }
             }

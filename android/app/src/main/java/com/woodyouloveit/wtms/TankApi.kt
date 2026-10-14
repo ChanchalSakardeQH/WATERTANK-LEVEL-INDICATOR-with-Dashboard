@@ -114,4 +114,11 @@ class TankApi(private val ctx: Context, address: String) {
     }
 
     suspend fun restart() { post("/api/restart", emptyMap()) }
+
+    suspend fun logout() { post("/api/logout", emptyMap()) }
+
+    /** True when the current token is still an admin session on the device (sessions end on restart or after 12 h idle). */
+    suspend fun isAdmin(): Boolean = try {
+        statusJson(4000).optJSONObject("auth")?.optBoolean("admin", false) == true
+    } catch (e: Exception) { false }
 }

@@ -1,9 +1,10 @@
 @echo off
 rem woodyouloveit Water Tanks Monitor - build the Android app on Windows.
 rem Double-click for a menu, or run with options, e.g.:  build-android.bat -Task Debug -Install -Launch
-rem Copyright (C) 2026 Chanchal Sakarde - woodyouloveit.com - GPL-3.0-or-later
+rem Copyright (C) 2026 Chanchal Sakarde - woodyouloveit.com - wooduloveit.com - GPL-3.0-or-later
 setlocal
 cd /d "%~dp0"
+title woodyouloveit - Water Tanks Monitor Android build
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\build-android.ps1" %*
 set "EXITCODE=%ERRORLEVEL%"
 if "%~1"=="" (

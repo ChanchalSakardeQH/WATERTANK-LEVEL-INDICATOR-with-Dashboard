@@ -66,8 +66,8 @@ main{max-width:1100px;margin:0 auto;padding:16px;display:grid;gap:16px;grid-temp
 #aKpi{grid-area:akpi}#aChart{grid-area:achart}#aMotor{grid-area:amotor}#aUse{grid-area:ause}#aHour{grid-area:ahour}#aNight{grid-area:anight}#aSet{grid-area:aset}
 #banners{grid-area:ban}
 #tabOverview:has(#banners[hidden]){grid-template-areas:'level glance'}#cLevel{grid-area:level}#cGlance{grid-area:glance}
-#tabSetup{grid-template-columns:1fr 1fr;grid-template-areas:'prof cal' 'site cal' 'site disp' 'power disp' 'rate dev' 'admin ota' 'wifi wifi';align-items:start}
-#cProfile{grid-area:prof}#cPower{grid-area:power}#cAdmin{grid-area:admin}#cRate{grid-area:rate}#cOta{grid-area:ota}#cCal{grid-area:cal}#cSite{grid-area:site}#cDisp{grid-area:disp}#cWifi{grid-area:wifi}#cDev{grid-area:dev}}
+#tabSetup{grid-template-columns:1fr 1fr;grid-template-areas:'prof cal' 'sens cal' 'site disp' 'power disp' 'rate dev' 'admin ota' 'wifi wifi';align-items:start}
+#cProfile{grid-area:prof}#cPower{grid-area:power}#cAdmin{grid-area:admin}#cSensors{grid-area:sens}#cRate{grid-area:rate}#cOta{grid-area:ota}#cCal{grid-area:cal}#cSite{grid-area:site}#cDisp{grid-area:disp}#cWifi{grid-area:wifi}#cDev{grid-area:dev}}
 .card{background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:18px}
 .card h2{font-size:15px;margin:0 0 14px;color:var(--muted);font-weight:600;letter-spacing:.02em}
 .hero{display:flex;gap:20px;align-items:stretch}
@@ -106,6 +106,15 @@ h3.sub{font-size:14px;margin:20px 0 6px;color:var(--text)}
 .sharePrev{white-space:pre-wrap;font-size:13px;line-height:1.5;max-height:200px;overflow:auto;background:var(--input);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:12px}
 .shareGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.shareGrid [hidden]{display:none}
 .btn.shWa{background:#1da851}
+.tank.multi{display:flex;gap:3px;background:none;border:none;padding:0}
+.tank.multi .part{flex:1;position:relative;height:100%;border:2px solid var(--line);border-radius:6px 6px 10px 10px;overflow:hidden;background:var(--input)}
+.tank.multi .part .water{position:absolute;left:0;right:0;bottom:0}
+.kv[hidden],.comps[hidden],.seg[hidden],.field[hidden],.row2[hidden]{display:none}
+.comps{display:grid;gap:10px;margin-top:6px}.comp .ctop{display:flex;justify-content:space-between;gap:8px;font-size:14px}
+.comp .ctop b{font-size:12px;margin-left:4px}.cbad{color:var(--danger)}.cwarn{color:var(--warn)}.cok{color:var(--accent)}
+.cbar{height:8px;border-radius:999px;background:var(--input);overflow:hidden;margin-top:4px}.cbar i{display:block;height:100%}
+.sens{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}.sens .sh{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline}
+#calSeg,#viewSeg{margin:0 0 12px}
 .litres{font-size:15px;color:var(--muted);margin:-2px 0 8px;font-weight:600}
 .gstats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}.gstats .stat b{font-size:20px}
 .seg[id=segUsage]{margin-bottom:0}
@@ -218,12 +227,13 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
       <select id="unitSel" class="mini" title="Units on this device (browser)"><option value="">Units: default</option>
         <option value="0">cm</option><option value="1">mm</option><option value="2">inch</option></select></span></h2>
     <div class="hero">
-      <div class="tank"><div class="water" id="water"></div></div>
+      <div class="tank" id="tank"><div class="water" id="water"></div></div>
       <div class="leds" id="leds" title="LED strip preview"></div>
       <div style="flex:1;min-width:0">
         <div class="big"><span id="pct">--</span><small>%</small></div>
         <div class="litres" id="litres"></div>
-        <div class="kv">
+        <div class="comps" id="compList" hidden></div>
+        <div class="kv" id="levelKv">
           <span>Distance</span><b id="dist">-- cm</b>
           <span>Empty at</span><b id="kvEmpty">-- cm</b>
           <span>Full at</span><b id="kvFull">-- cm</b>
@@ -279,7 +289,9 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
       <div class="field"><label for="inDia">Diameter (<span class="uL">mm</span>)</label><input type="number" id="inDia" min="0" max="20000" inputmode="numeric"></div>
       <div class="field"><label for="inHgtC">Height (<span class="uL">mm</span>)</label><input type="number" id="inHgtC" min="0" max="20000" inputmode="numeric"></div>
     </div>
-    <div class="row2">
+    <p class="help" id="profMultiNote" hidden>This tank has more than one compartment: set each compartment's capacity and water depth in
+      <a href="#cSensors">Sensors &amp; compartments</a>.</p>
+    <div class="row2" id="profDepthCap">
       <div class="field"><label for="inDepth">Water depth when full (<span class="uL">mm</span>)</label><input type="number" id="inDepth" min="0" max="20000" inputmode="numeric">
         <p class="help">Tank bottom to the overflow pipe: the highest the water gets.</p></div>
       <div class="field"><label for="inCapP">Capacity (litres)</label><input type="number" id="inCapP" min="0" max="1000000" inputmode="numeric">
@@ -295,10 +307,11 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
 
   <section class="card" id="cCal">
     <h2>CALIBRATION</h2>
+    <div class="seg" id="calSeg" hidden></div>
     <div class="live"><span>Live sensor reading <small class="help" id="liveMode"></small></span><b id="liveDist">-- cm</b></div>
 
     <h3 class="sub">1 · How full is the tank right now?</h3>
-    <p class="help">Slide to the current water level. With the water depth from <a href="#cProfile">Usage &amp; tank</a>,
+    <p class="help" id="calHelp">Slide to the current water level. With the water depth from <a href="#cProfile">Usage &amp; tank</a>,
       the empty and full points are worked out from the live reading. No need to empty or fill the tank.</p>
     <div class="slide"><input type="range" id="inNow" min="0" max="100" step="1" value="50"><b id="nowVal">50%</b></div>
     <div class="calprev" id="prevSlider"></div>
@@ -363,6 +376,23 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
       <button class="btn" onclick="saveSettings()">Save settings</button>
       <button class="btn sec" onclick="resetDefaults()">Defaults</button>
     </div>
+  </section>
+
+  <section class="card" id="cSensors">
+    <h2>SENSORS &amp; COMPARTMENTS</h2>
+    <p class="help" style="margin-top:0">One ultrasonic sensor per tank compartment, e.g. both halves of a partitioned overhead tank.
+      Every sensor is powered from 3V3 and GND; the pins below are fixed by the firmware.</p>
+    <div class="row2" style="margin-top:10px">
+      <div class="field"><label for="inSensCount">Sensors in use</label><select id="inSensCount" class="sel"></select></div>
+      <div class="field" id="fLedMode"><label for="inLedMode">LED strip shows</label><select id="inLedMode" class="sel">
+        <option value="0">Whole tank, one bar</option>
+        <option value="1">Split strip, one bar each</option>
+        <option value="2">One strip per compartment</option></select>
+        <p class="help">Split: a dark LED between the bars. One strip each: chain the strips (DOUT → DIN) and set the total LED count.</p></div>
+    </div>
+    <div id="sensRows"></div>
+    <p class="help" id="sensNote"></p>
+    <div style="margin-top:12px"><button class="btn" onclick="saveSensors()">Save sensors</button></div>
   </section>
 
   <section class="card" id="cPower">
@@ -496,6 +526,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
 <main id="tabAnalytics" class="tab" hidden>
   <section class="card" id="aKpi">
     <h2>TANK ANALYTICS</h2>
+    <div class="seg" id="viewSeg" hidden></div>
     <div class="alert info" id="aMsg"></div>
     <div class="kpis" id="kpis"></div>
     <div class="pdfrow">
@@ -633,22 +664,27 @@ function setAlert(el,cls,html){el.className='alert'+(cls?' show '+cls:'');if(cls
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 
 function render(){
-  const s=st,w=s.wifi,lvl=s.valid?s.level:0;
-  $('pct').textContent=s.valid?Math.round(s.level):'--';
+  const s=st,w=s.wifi,tv=totalValid(),lvl=tv?s.level:0,S=SN(),c=CS();
+  $('pct').textContent=tv?Math.round(s.level):'--';
   $('dist').textContent=s.valid?fmtL(s.distance):'no echo';
-  $('liveDist').textContent=s.valid?fmtL(s.distance):'no echo';
+  $('liveDist').textContent=c.valid?fmtL(c.distance):'no echo';
+  renderComps();renderCalSeg();
   if($('liveMode'))$('liveMode').textContent=s.rate&&s.rate.live?'· live, every 0.5 s':'';
   $('kvEmpty').textContent=fmtL(s.empty);$('kvFull').textContent=fmtL(s.full);
-  const wt=$('water');wt.style.height=(s.valid?lvl:0)+'%';wt.style.backgroundColor=ledColor(lvl/100);
+  if(!multi()){const wt=$('water');wt.style.height=(tv?lvl:0)+'%';wt.style.backgroundColor=ledColor(lvl/100);}
   buildLeds(s.leds);
-  const lit=lvl/100*N,leds=$('leds').children;
-  for(let i=0;i<N;i++){const on=s.valid&&i<Math.round(lit);
-    leds[i].style.backgroundColor=on?ledColor(s.colorByLevel?lvl/100:posT(i)):'';}
-  const low=s.valid&&lvl<s.lowAlarm;
-  $('alertFault').classList.toggle('show',!s.valid);$('alertLow').classList.toggle('show',low);
-  $('chip').className='chip'+(!s.valid?' bad':low?' warn':'');
-  $('chipText').textContent=!s.valid?'Sensor fault':low?'Low water':'Online';
-  $('btnEmpty').disabled=$('btnFull').disabled=!s.valid;
+  const lc=ledColors(),leds=$('leds').children;
+  for(let i=0;i<N;i++)leds[i].style.backgroundColor=lc[i]||'';
+  const bad=S.filter(x=>!x.valid),lowS=S.filter(x=>x.valid&&x.level<s.lowAlarm),fault=bad.length>0,low=lowS.length>0;
+  $('alertFault').textContent=multi()?`Sensor fault (no echo): ${bad.map(x=>x.name).join(', ')}. Check that sensor's wiring and that its probe faces the water.`
+    :'Sensor fault: no echo. Check the sensor wiring and that the probe faces the water.';
+  $('alertLow').textContent=multi()?`Low water: ${lowS.map(x=>`${x.name} ${Math.round(x.level)}%`).join(', ')}.`:'Low water level.';
+  $('alertFault').classList.toggle('show',fault);$('alertLow').classList.toggle('show',low);
+  $('chip').className='chip'+(fault?' bad':low?' warn':'');
+  $('chipText').textContent=fault?'Sensor fault':low?'Low water':'Online';
+  $('btnEmpty').disabled=$('btnFull').disabled=!c.valid;
+  $('profMultiNote').hidden=!multi();$('profDepthCap').hidden=multi();
+  if(isAdmin()){fillSensors();renderSensors();}
 
   // Wi-Fi
   const conn=w.state==='connected';
@@ -679,10 +715,97 @@ function render(){
   $('logStore').textContent=s.logStore==='flash'?'Flash (kept after restart)':'Memory only (lost on restart)';
   $('host').textContent=conn?`${w.host}.local · ${w.ip}`:`hotspot · ${w.apIp}`;
   const fa=$('alertFill');
-  if(s.filling)setAlert(fa,'info',`Filling (motor on) · rising ${fmtRate(s.fillRate)}`+(s.fillEta>=0?` · full in about ${dur(s.fillEta)}`:''));
+  const fillS=S.filter(x=>x.filling);
+  if(fillS.length)setAlert(fa,'info',fillS.map(x=>(multi()?esc(x.name)+': ':'')+`Filling (motor on) · rising ${fmtRate(x.fillRate)}`+
+    (x.fillEta>=0?` · full in about ${dur(x.fillEta)}`:'')).join('<br>'));
   else setAlert(fa,'','');
   if(!formLoaded)fillForm();
 }
+
+
+// ---- Sensors / compartments (firmware 3.0.0+ sends st.sensors; older firmware has one sensor) ----
+function SN(){
+  if(st&&st.sensors&&st.sensors.length)return st.sensors;
+  return [{name:'Tank',valid:st.valid,distance:st.distance,level:st.level,empty:st.empty,full:st.full,capacity:st.capacity,
+    depth:(st.profile||{}).depth||0,filling:st.filling,fillRate:st.fillRate,fillEta:st.fillEta,trig:'',echo:''}];}
+const multi=()=>!!st&&SN().length>1;
+let calSel=0;
+const CS=()=>SN()[Math.min(calSel,SN().length-1)];                 // the sensor being calibrated
+const totalValid=()=>multi()?!!(st.total&&st.total.valid):st.valid;
+// Water depth used by the calibration slider and measurements (mm)
+function calDepthMm(){return multi()?(CS().depth||0):mmIn('inDepth');}
+const calSpanMm=()=>(CS().empty-CS().full)*10;
+
+// LED strip preview, laid out the same way as the firmware draws it
+function ledColors(){
+  const S=SN(),n=S.length,LN=st.leds,mode=st.ledMode||0,out=new Array(LN).fill('');
+  const bar=(start,len,level)=>{const lit=Math.round(level/100*len);
+    for(let i=0;i<lit&&i<len;i++)out[start+i]=ledColor(st.colorByLevel?level/100:(len>1?i/(len-1):1));};
+  const gap=mode===1?1:0,seg=n>1?Math.floor((LN-gap*(n-1))/n):0;
+  if(n===1||mode===0||seg<2){if(totalValid())bar(0,LN,st.level);}
+  else S.forEach((s,i)=>{const start=i*(seg+gap),len=i===n-1?LN-start:seg;if(s.valid)bar(start,len,s.level);});
+  return out;}
+
+// Overview: one tank, or a tank split into compartments
+function renderComps(){
+  const m=multi(),S=SN(),tank=$('tank'),want=String(m?S.length:1);
+  $('levelKv').hidden=m;$('compList').hidden=!m;
+  if(tank.dataset.n!==want){tank.dataset.n=want;tank.classList.toggle('multi',m);
+    tank.innerHTML=m?S.map(()=>'<div class="part"><div class="water"></div></div>').join(''):'<div class="water" id="water"></div>';}
+  if(!m)return;
+  [...tank.children].forEach((p,i)=>{const s=S[i],w=p.firstChild;w.style.height=(s.valid?s.level:0)+'%';w.style.backgroundColor=ledColor(s.level/100);});
+  $('compList').innerHTML=S.map(s=>{
+    const lit=s.capacity&&s.valid?` · ≈ ${Math.round(s.capacity*s.level/100).toLocaleString()} L`:'';
+    const state=!s.valid?'<b class="cbad">no echo</b>':s.filling?'<b class="cok">filling</b>':s.level<st.lowAlarm?'<b class="cwarn">low</b>':'';
+    return `<div class="comp"><div class="ctop"><span>${esc(s.name)}</span><span>${s.valid?Math.round(s.level)+'%':'--'}${lit}${state}</span></div>`+
+      `<div class="cbar"><i style="width:${s.valid?s.level:0}%;background:${ledColor(s.level/100)}"></i></div></div>`;}).join('');}
+
+// Calibration: which sensor
+function renderCalSeg(){
+  const S=SN(),seg=$('calSeg'),m=S.length>1;seg.hidden=!m;
+  if(calSel>=S.length)calSel=0;
+  const key=S.map(s=>s.name).join('|')+'#'+calSel;
+  if(m&&seg.dataset.k!==key){seg.dataset.k=key;
+    seg.innerHTML=S.map((s,i)=>`<button data-i="${i}" class="${i===calSel?'on':''}">${esc(s.name)}</button>`).join('');
+    [...seg.children].forEach(b=>b.onclick=()=>{calSel=+b.dataset.i;formLoaded=false;profLoaded=false;render();});}
+  $('calHelp').innerHTML=m?`Slide to the current water level of <b>${esc(CS().name)}</b>. With its water depth from <a href="#cSensors">Sensors &amp; compartments</a>, `+
+      'the empty and full points are worked out from the live reading. No need to empty or fill the tank.'
+    :'Slide to the current water level. With the water depth from <a href="#cProfile">Usage &amp; tank</a>, '+
+      'the empty and full points are worked out from the live reading. No need to empty or fill the tank.';}
+
+// Setup: sensors & compartments
+let sensLoaded=false;
+function fillSensors(){if(sensLoaded||!st.pins)return;sensLoaded=true;
+  const max=st.maxSensors||1;
+  $('inSensCount').innerHTML=Array.from({length:max},(_,i)=>`<option value="${i+1}">${i?(i+1)+' compartments':'1 (one tank)'}</option>`).join('');
+  $('inSensCount').value=String(SN().length);$('inLedMode').value=String(st.ledMode||0);sensRows();}
+function sensRows(){
+  const n=+$('inSensCount').value,S=SN(),P=st.pins||[];
+  $('fLedMode').hidden=n<2;
+  const dv=mm=>mm?+(mm/10*UN().f).toFixed(ul()==='mm'?0:ul()==='in'?2:1):'';
+  $('sensRows').innerHTML=Array.from({length:n},(_,i)=>{const s=S[i]||{},p=P[i]||{};
+    const head=`<div class="sh"><b>Sensor ${i+1}</b><span class="help">TRIG ${p.trig||'?'} → sensor RX · ECHO ${p.echo||'?'} ← sensor TX · 5V pin → 3V3 · GND</span></div>`;
+    const read=`<p class="help" id="sRead${i}"></p>`;
+    if(n===1)return `<div class="sens">${head}${read}<p class="help">Capacity and water depth: <a href="#cProfile">Usage &amp; tank</a>.</p></div>`;
+    return `<div class="sens">${head}<div class="row3">
+      <div class="field"><label for="sName${i}">Name</label><input type="text" id="sName${i}" maxlength="16" value="${esc(s.name||('Compartment '+'ABCD'[i]))}"></div>
+      <div class="field"><label for="sCap${i}">Capacity (litres)</label><input type="number" id="sCap${i}" min="0" inputmode="numeric" value="${s.capacity||''}"></div>
+      <div class="field"><label for="sDepth${i}">Water depth when full (<span class="uL">${ul()}</span>)</label><input type="number" id="sDepth${i}" step="any" inputmode="decimal" value="${dv(s.depth)}"></div>
+      </div>${read}</div>`;}).join('');
+  $('sensNote').textContent=n!==S.length?`Changing from ${S.length} to ${n} sensor${n>1?'s':''} clears the level history and fills (each record holds one reading per sensor).`:'';
+  renderSensors();}
+function renderSensors(){const S=SN();
+  S.forEach((s,i)=>{const e=$('sRead'+i);if(e)e.textContent=s.valid?`Reading ${fmtL(s.distance)} · ${Math.round(s.level)}%`:'No echo from this sensor';});
+  for(let i=S.length;i<4;i++){const e=$('sRead'+i);if(e)e.textContent='Not in use yet: wire it, then save to start reading';}}
+$('inSensCount').onchange=sensRows;
+async function saveSensors(){
+  const n=+$('inSensCount').value,old=SN().length;
+  if(n!==old&&!await ask(`Use ${n} sensor${n>1?'s':''}? The level history and fills recorded so far are cleared, because each record holds one reading per sensor. `+
+    'Download a PDF report or the data (CSV) first if you need them.'))return;
+  const d={count:n,ledMode:$('inLedMode').value};
+  if(n>1)for(let i=0;i<n;i++){d['name'+i]=$('sName'+i).value.trim();d['cap'+i]=Math.round(iv('sCap'+i));d['depth'+i]=Math.round(iv('sDepth'+i)/UN().f*10);}
+  const j=await post('/api/sensors',d);
+  if(j.ok){sensLoaded=false;formLoaded=false;profLoaded=false;aLoaded=false;calSel=Math.min(calSel,n-1);await poll();loadAnalytics();}}
 
 // ---- Usage & tank profile ----
 // Loft tank sizes (rated litres; outer length x width x height in mm)
@@ -712,10 +835,10 @@ function profileUI(){
   const r=recommended();
   $('recHelp').textContent=`Recommended for ${USAGE[usageSel].toLowerCase()} use, ${LOCS[loc].toLowerCase()}: night leak check ${hh(r.nightStart)}–${hh(r.nightEnd)}, `+
     `low water alarm ${r.lowAlarm}%, leak limit ${fmtL(r.leakCm)}.`;
-  $('depthShow').textContent=mmIn('inDepth')?fmtMmL(mmIn('inDepth')):'Set it in Usage & tank';
+  $('depthShow').textContent=calDepthMm()?fmtMmL(calDepthMm()):(multi()?'Set it in Sensors & compartments':'Set it in Usage & tank');
   calPreview();
 }
-function recommended(){const loc=+$('inLoc').value,depth=mmIn('inDepth')||spanMm();
+function recommended(){const loc=+$('inLoc').value,depth=mmIn('inDepth')||calSpanMm();
   return {nightStart:usageSel?22:1,nightEnd:usageSel?6:5,lowAlarm:loc===2?30:usageSel?25:15,
     leakCm:Math.max(1,Math.round(depth*0.02/5)*0.5)};}
 function fillProfile(){if(profLoaded||!st.profile)return;profLoaded=true;const p=st.profile;
@@ -724,7 +847,7 @@ function fillProfile(){if(profLoaded||!st.profile)return;profLoaded=true;const p
   if(!$('inPreset').value)$('inPreset').value='0';
   setMm('inLen',p.len);setMm('inWid',p.wid);setMm('inHgt',p.hgt);setMm('inDia',p.dia);setMm('inHgtC',p.hgt);
   setMm('inDepth',p.depth);$('inCapP').value=st.capacity||'';
-  setCm('inGap',st.full);$('inNow').value=Math.round(st.valid?st.level:50);$('nowVal').textContent=$('inNow').value+'%';
+  setCm('inGap',CS().full);$('inNow').value=Math.round(CS().valid?CS().level:50);$('nowVal').textContent=$('inNow').value+'%';
   profileUI();}
 [...$('segUsage').children].forEach(b=>b.onclick=()=>{usageSel=+b.dataset.v;
   [...$('segUsage').children].forEach(x=>x.classList.toggle('on',x===b));profileUI();});
@@ -743,7 +866,7 @@ async function saveProfile(){
   if(!j.ok)return;
   if(cap!==st.capacity)await post('/api/settings',{capacity:cap});
   $('inCapP').value=cap||'';profLoaded=false;formLoaded=false;await poll();
-  if(d&&Math.abs(d-spanMm())>15)toast('Tank saved. Calibrate below so the level matches the new water depth.');
+  if(d&&!multi()&&Math.abs(d-calSpanMm())>15)toast('Tank saved. Calibrate below so the level matches the new water depth.');
 }
 async function applyRecommended(){const r=recommended();
   if(!await ask(`Apply recommended settings for ${USAGE[usageSel].toLowerCase()} use? Night leak check ${hh(r.nightStart)}–${hh(r.nightEnd)}, `+
@@ -758,30 +881,34 @@ function calCheck(E,F){
   if(F<22)return ['warn',`The full water line is ${fmtL(F)} below the sensor, at the edge of its blind zone. Readings near full may jump. ${fmtL(25,0)} or more is safer.`];
   if(E>450)return ['bad',`The empty point would be more than ${fmtL(450,0)} away, beyond the sensor range.`];
   return ['',''];}
-function calText(E,F){const D=E-F,l=st.capacity>0?st.capacity/(D*10):0;
+function calText(E,F){const D=E-F,cap=CS().capacity,l=cap>0?cap/(D*10):0;
   return `Empty at <b>${fmtL(E)}</b> · full at <b>${fmtL(F)}</b> from the sensor · water depth ${fmtMmL(D*10)}`+
     (l?` · 1 ${ul()} ≈ ${(l*10/UN().f).toFixed(ul()==='mm'?2:1)} L`:'');}
 function calPreview(){
-  const D=mmIn('inDepth')/10,p=+$('inNow').value/100,box=$('prevSlider'),box2=$('prevMeas');
-  $('nowVal').textContent=$('inNow').value+'%'+(st&&st.capacity?` · ${Math.round(st.capacity*p)} L`:'');
-  if(!D){box.className='calprev warn';box.textContent='Enter the water depth when full in Usage & tank first.';$('btnSlider').disabled=true;}
-  else if(!st||!st.valid){box.className='calprev warn';box.textContent='Waiting for a valid sensor reading.';$('btnSlider').disabled=true;}
-  else{const E=st.distance+p*D,F=E-D,[c,m]=calCheck(E,F);box.className='calprev '+c;box.innerHTML=calText(E,F)+(m?'<br>'+m:'');$('btnSlider').disabled=c==='bad';}
+  const c=CS(),D=calDepthMm()/10,p=+$('inNow').value/100,box=$('prevSlider'),box2=$('prevMeas');
+  $('nowVal').textContent=$('inNow').value+'%'+(c.capacity?` · ${Math.round(c.capacity*p)} L`:'');
+  if(!D){box.className='calprev warn';box.textContent=multi()?`Enter the water depth of ${c.name} in Sensors & compartments first.`:'Enter the water depth when full in Usage & tank first.';$('btnSlider').disabled=true;}
+  else if(!c.valid){box.className='calprev warn';box.textContent='Waiting for a valid sensor reading.';$('btnSlider').disabled=true;}
+  else{const E=c.distance+p*D,F=E-D,[cls,m]=calCheck(E,F);box.className='calprev '+cls;box.innerHTML=calText(E,F)+(m?'<br>'+m:'');$('btnSlider').disabled=cls==='bad';}
   const G=cmIn('inGap');
   if(!D||!G){box2.className='calprev';box2.textContent='Measure from the sensor face down to the overflow (full) line.';$('btnMeas').disabled=true;}
-  else{const E=G+D,[c,m]=calCheck(E,G);box2.className='calprev '+c;box2.innerHTML=calText(E,G)+(m?'<br>'+m:'');$('btnMeas').disabled=c==='bad';}
+  else{const E=G+D,[cls,m]=calCheck(E,G);box2.className='calprev '+cls;box2.innerHTML=calText(E,G)+(m?'<br>'+m:'');$('btnMeas').disabled=cls==='bad';}
 }
 $('inNow').oninput=calPreview;$('inGap').oninput=calPreview;
 async function saveCal(E,F,how){
-  if(!await ask(`Save calibration ${how}? Empty at ${fmtL(E)}, full at ${fmtL(F)} from the sensor.`))return;
-  const j=await post('/api/calibrate',{empty:E.toFixed(1),full:F.toFixed(1)});
-  if(j.ok){await post('/api/profile',{gap:Math.round(F*10),depth:Math.round((E-F)*10)});formLoaded=false;profLoaded=false;poll();}}
-function calSlider(){const D=mmIn('inDepth')/10,p=+$('inNow').value/100,E=st.distance+p*D;saveCal(E,E-D,`with the tank ${$('inNow').value}% full`);}
-function calMeasured(){const D=mmIn('inDepth')/10,G=cmIn('inGap');saveCal(G+D,G,'from measurements');}
+  const who=multi()?` for ${CS().name}`:'';
+  if(!await ask(`Save calibration${who} ${how}? Empty at ${fmtL(E)}, full at ${fmtL(F)} from the sensor.`))return;
+  const j=await post('/api/calibrate',{empty:E.toFixed(1),full:F.toFixed(1),sensor:calSel});
+  if(j.ok){
+    if(multi())await post('/api/sensors',{['depth'+calSel]:Math.round((E-F)*10)});
+    else await post('/api/profile',{gap:Math.round(F*10),depth:Math.round((E-F)*10)});
+    formLoaded=false;profLoaded=false;sensLoaded=false;poll();}}
+function calSlider(){const D=calDepthMm()/10,p=+$('inNow').value/100,E=CS().distance+p*D;saveCal(E,E-D,`with the tank ${$('inNow').value}% full`);}
+function calMeasured(){const D=calDepthMm()/10,G=cmIn('inGap');saveCal(G+D,G,'from measurements');}
 
 // ---- Overview: litres and tank at a glance ----
 function renderGlance(){
-  const s=st,p=s.profile||{},cap=s.capacity,lvl=s.valid?s.level:null,depth=(s.empty-s.full)*10;
+  const s=st,p=s.profile||{},cap=s.capacity,lvl=totalValid()?s.level:null,depth=(s.empty-s.full)*10;
   const L=v=>Math.round(v).toLocaleString()+' L';
   $('litres').textContent=cap&&lvl!==null?`≈ ${L(cap*lvl/100)} of ${L(cap)}`:'';
   $('gWater').textContent=lvl===null?'--':cap?L(cap*lvl/100):Math.round(lvl)+'%';
@@ -792,11 +919,22 @@ function renderGlance(){
   const n=mm=>fmtMmL(mm).replace(' '+ul(),'');
   const dims=p.shape?(p.dia?`cylinder Ø ${n(p.dia)} × ${fmtMmL(p.hgt)}`:'vertical cylinder'):(p.len?`${n(p.len)} × ${n(p.wid)} × ${fmtMmL(p.hgt)}`:'rectangular');
   $('gTank').textContent=(p.preset&&PRESETS[p.preset]?`Loft ${PRESETS[p.preset].cap} L, `:'')+dims;
+  const warn=[];
+  if(multi()){const S=SN();
+    $('gDepth').textContent=S.map(x=>`${x.name} ${x.depth?fmtMmL(x.depth):'not set'}`).join(' · ');
+    $('gRange').textContent=S.map(x=>`${x.name} ${fmtL(x.full)} → ${fmtL(x.empty)}`).join(' · ');
+    $('gGap').textContent=S.map(x=>`${x.name} ${fmtL(x.full)}`).join(' · ');
+    $('gResL').textContent='Sensors';$('gRes').textContent=S.map((x,i)=>`${x.name} (${(st.pins&&st.pins[i])?st.pins[i].trig+'/'+st.pins[i].echo:''})`).join(' · ');
+    S.forEach(x=>{
+      if(!x.depth&&Math.abs(x.empty-120)<0.05&&Math.abs(x.full-25)<0.05)warn.push(`${esc(x.name)} is not calibrated yet. Go to Setup → Calibration.`);
+      if(x.full<20)warn.push(`${esc(x.name)}: the full water line is ${fmtL(x.full)} from the sensor, inside its blind zone.`);
+      if(x.depth&&Math.abs(x.depth-(x.empty-x.full)*10)>15)warn.push(`${esc(x.name)}: calibration doesn't match its water depth (${x.depth} mm). Re-calibrate.`);
+      if(!x.capacity)warn.push(`${esc(x.name)} has no capacity set, so litres are not shown. Setup → Sensors & compartments.`);});
+    setAlert($('gWarn'),warn.length?'warn':'',warn.join('<br>'));return;}
   $('gDepth').textContent=p.depth?fmtMmL(p.depth):'not set';
   $('gRange').textContent=`${fmtL(s.full)} → ${fmtL(s.empty)} (${fmtMmL(depth)})`;
   $('gGap').textContent=fmtL(s.full);
   $('gResL').textContent=`1 ${ul()} of water`;$('gRes').textContent=perUnitText(cap,depth);
-  const warn=[];
   if(!p.depth&&Math.abs(s.empty-120)<0.05&&Math.abs(s.full-25)<0.05)warn.push('Not calibrated yet: the level uses default distances. Go to Setup → Calibration.');
   if(s.full<20)warn.push(`The full water line is ${fmtL(s.full)} from the sensor, inside its blind zone. Raise the sensor on a stand pipe.`);
   if(p.depth&&Math.abs(p.depth-depth)>15)warn.push(`Calibration (${depth.toFixed(0)} mm) doesn't match the tank's water depth (${p.depth} mm). Re-calibrate in Setup.`);
@@ -911,7 +1049,9 @@ function settingsObj(){const s=st,p=s.profile||{};return {
   display:{units:['cm','mm','inch'][s.units],leds:s.leds,brightness:s.brightness,reversed:s.reversed,colorByLevel:s.colorByLevel},
   sensor:{triggerUs:s.trigUs},
   power:{powerSaving:s.perfMode===0,txPower:['medium','high','low'][s.txLevel],hotspot:['automatic','always','on-demand'][s.apMode]},
-  updateRate:{profile:['eco','balanced','responsive','custom'][s.rate.profile],sensorSeconds:s.rate.customSensorMs/1000,dashboardSeconds:s.rate.customRefreshS}};}
+  updateRate:{profile:['eco','balanced','responsive','custom'][s.rate.profile],sensorSeconds:s.rate.customSensorMs/1000,dashboardSeconds:s.rate.customRefreshS},
+  sensors:{count:SN().length,ledMode:['whole-tank','split','one-strip-each'][s.ledMode||0],
+    list:SN().map(x=>({name:x.name,capacityL:x.capacity,waterDepthMm:x.depth,emptyCm:+(+x.empty).toFixed(1),fullCm:+(+x.full).toFixed(1)}))}};}
 // Short fingerprint of the settings (not of the export time), shown in reports and exported files
 function settingsId(){return sha256(JSON.stringify(settingsObj())).slice(0,8).toUpperCase();}
 function exportSettings(){const r=settingsFile();saveBlob(r.blob,r.name);toast(`Settings exported (ID ${r.id})`);}
@@ -926,7 +1066,11 @@ async function importSettings(input){
   if(o.site)steps.push(['/api/site',{org:o.site.org||'',building:o.site.building||'',tank:o.site.tank||''}]);
   if(o.profile){const q=o.profile;steps.push(['/api/profile',{usage:q.usage|0,location:q.location|0,shape:q.shape|0,preset:q.preset|0,
     len:q.lengthMm|0,wid:q.widthMm|0,hgt:q.heightMm|0,dia:q.diameterMm|0,depth:q.waterDepthMm|0}]);}
-  if(o.calibration&&o.calibration.emptyCm&&o.calibration.fullCm)steps.push(['/api/calibrate',{empty:o.calibration.emptyCm,full:o.calibration.fullCm}]);
+  const sl=o.sensors&&Array.isArray(o.sensors.list)?o.sensors.list:null;
+  if(sl&&st.sensors){const d={count:Math.min(sl.length,st.maxSensors||1),ledMode:{'whole-tank':0,split:1,'one-strip-each':2}[o.sensors.ledMode]??0};
+    sl.forEach((x,i)=>{d['name'+i]=x.name||'';d['cap'+i]=x.capacityL|0;d['depth'+i]=x.waterDepthMm|0;});steps.push(['/api/sensors',d]);
+    sl.slice(0,d.count).forEach((x,i)=>{if(x.emptyCm&&x.fullCm)steps.push(['/api/calibrate',{sensor:i,empty:x.emptyCm,full:x.fullCm}]);});}
+  else if(o.calibration&&o.calibration.emptyCm&&o.calibration.fullCm)steps.push(['/api/calibrate',{empty:o.calibration.emptyCm,full:o.calibration.fullCm}]);
   const set={};
   if(o.tank&&o.tank.capacityL!==undefined)set.capacity=o.tank.capacityL;
   if(o.alarms)set.lowAlarm=o.alarms.lowAlarmPct;
@@ -1021,17 +1165,25 @@ function logFile(){
 async function pdfFile(){if(!aLoaded)await loadAnalytics();if(!ana||!st)throw new Error('No analytics data yet');
   return {blob:buildReport(await logoJpeg()),name:`wtms-report-${fileTag()}${dstamp()}.pdf`};}
 // Level history and fills as CSV (opens in Excel / Google Sheets)
-async function csvFile(){if(!aLoaded)await loadAnalytics();if(!hist.length)throw new Error('No level history recorded yet');
-  const u=ul(),cap=st.capacity,q=v=>`"${String(v).replace(/"/g,'""')}"`;
+async function csvFile(){if(!aLoaded)await loadAnalytics();if(!histAll.length)throw new Error('No level history recorded yet');
+  const u=ul(),S=SN(),q=v=>`"${String(v).replace(/"/g,'""')}"`,dp=ul()==='mm'?0:ul()==='in'?2:1;
   const ds=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`,ts=d=>`${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  const out=[`${q('Water Tanks Monitor System · '+(siteLine()||'site not named'))}`,`${q('Exported '+new Date().toLocaleString()+' · firmware '+st.fw+' · settings ID '+settingsId())}`,'',
-    ['Date','Time',`Distance (${u})`,'Level %'].concat(cap?['Litres']:[],['Filling']).join(',')];
-  for(const r of hist){if(r.mm===null)continue;const d=new Date(r.t*1000),p=Math.max(0,Math.min(100,pctOf(r.mm)));
-    out.push([ds(d),ts(d),(r.mm/10*UN().f).toFixed(ul()==='mm'?0:ul()==='in'?2:1),p.toFixed(1)].concat(cap?[Math.round(cap*p/100)]:[],[r.fill?'yes':'no']).join(','));}
-  out.push('','Fills (motor runs)',['Start date','Start time','Minutes',cap?'Litres added':'Level added %'].join(','));
-  for(const f of fills){const d=new Date(f.s*1000),add=(f.smm-f.emm);
-    out.push([ds(d),ts(d),Math.round((f.e-f.s)/60),cap?Math.round(add*lpm()):(add/spanMm()*100).toFixed(1)].join(','));}
-  return {blob:new Blob(['\ufeff'+out.join('\r\n')+'\r\n'],{type:'text/csv'}),name:`wtms-data-${fileTag()}${dstamp()}.csv`,rows:hist.length};}
+  const pc=(s,mm)=>Math.max(0,Math.min(100,(s.empty*10-mm)/((s.empty-s.full)*10)*100));
+  const head=['Date','Time'];
+  S.forEach(s=>{const n=S.length>1?s.name+' ':'';head.push(q(`${n}distance (${u})`),q(`${n}level %`));if(s.capacity)head.push(q(`${n}litres`));head.push(q(`${n}filling`));});
+  if(S.length>1)head.push('Whole tank level %');
+  const out=[`${q('Water Tanks Monitor System · '+(siteLine()||'site not named'))}`,`${q('Exported '+new Date().toLocaleString()+' · firmware '+st.fw+' · settings ID '+settingsId())}`,'',head.join(',')];
+  for(const r of histAll){const d=new Date(r.t*1000),row=[ds(d),ts(d)];let k=0,sum=0,num=0,den=0;
+    S.forEach((s,i)=>{const mm=r.mm[i];
+      if(mm===null||mm===undefined){row.push('','');if(s.capacity)row.push('');row.push('');return;}
+      const p=pc(s,mm);k++;sum+=p;num+=p*(s.capacity||0);den+=s.capacity||0;
+      row.push((mm/10*UN().f).toFixed(dp),p.toFixed(1));if(s.capacity)row.push(Math.round(s.capacity*p/100));row.push(r.flags&(1<<i)?'yes':'no');});
+    if(S.length>1)row.push(k===S.length?(S.every(s=>s.capacity)&&den?num/den:sum/k).toFixed(1):'');
+    out.push(row.join(','));}
+  out.push('','Fills (motor runs)',['Compartment','Start date','Start time','Minutes','Added (litres or level %)'].join(','));
+  for(const f of fillsAll){const s=S[f.sensor]||S[0],d=new Date(f.s*1000),add=f.smm-f.emm,span=(s.empty-s.full)*10;
+    out.push([q(s.name),ds(d),ts(d),Math.round((f.e-f.s)/60),s.capacity?Math.round(add*s.capacity/span)+' L':(add/span*100).toFixed(1)+' %'].join(','));}
+  return {blob:new Blob(['\ufeff'+out.join('\r\n')+'\r\n'],{type:'text/csv'}),name:`wtms-data-${fileTag()}${dstamp()}.csv`,rows:histAll.length};}
 
 // ---- Share texts (WhatsApp *bold* is removed for email) ----
 const sentence=s=>s.charAt(0)+s.slice(1).toLowerCase();
@@ -1040,18 +1192,23 @@ function headLine(){return `*${tankTitle()||'Water tank'}*${st.site.org?' · '+s
 function fileLine(name,attached){return name?(attached?`Attached: ${name}`:`File: ${name} (attach it from Downloads)`):'';}
 const SHARE={
   level:()=>({title:'Share water level',subject:`Water level: ${tankTitle()||'tank'}`,text:()=>{const s=st,cap=s.capacity,L=[headLine()];
-    if(s.valid){L.push(`Water level: ${Math.round(s.level)}%`+(cap?` (≈ ${Math.round(cap*s.level/100).toLocaleString()} L of ${cap.toLocaleString()} L)`:''));
-      L.push(s.filling?`Filling now, rising ${fmtRate(s.fillRate)}`+(s.fillEta>=0?`, full in about ${dur(s.fillEta)}`:''):'Motor off');
-      if(s.level<s.lowAlarm)L.push(`Low water: below the ${s.lowAlarm}% alarm`);}
-    else L.push('Sensor fault: no echo from the level sensor');
+    const line=(x,label)=>{if(!x.valid)return `${label}sensor fault (no echo)`;
+      let t=`${label}${Math.round(x.level)}%`+(x.capacity?` (≈ ${Math.round(x.capacity*x.level/100).toLocaleString()} L of ${x.capacity.toLocaleString()} L)`:'');
+      if(x.filling)t+=`, filling ${fmtRate(x.fillRate)}`+(x.fillEta>=0?`, full in about ${dur(x.fillEta)}`:'');
+      if(x.level<s.lowAlarm)t+=', LOW';return t;};
+    if(multi()){
+      L.push(totalValid()?`Whole tank: ${Math.round(s.level)}%`+(cap?` (≈ ${Math.round(cap*s.level/100).toLocaleString()} L of ${cap.toLocaleString()} L)`:''):'Whole tank: a sensor has a fault');
+      SN().forEach(x=>L.push(line(x,`• ${x.name}: `)));}
+    else{const x=SN()[0];
+      L.push(line(x,'Water level: '));if(x.valid&&!x.filling)L.push('Motor off');}
     L.push(`As of ${new Date().toLocaleString()}`,'',footer);return L.join('\n');}}),
   report:()=>({title:'Share analytics report',subject:`Tank analytics report: ${tankTitle()||'tank'}`,make:pdfFile,text:(n,att)=>{const now=new Date(),from=new Date(now-7*864e5);
-    const L=[headLine(),`Tank analytics, last 7 days (${from.toLocaleDateString()} – ${now.toLocaleDateString()})`];
+    const L=[headLine(),`Tank analytics${AV.label?' ('+AV.label+')':''}, last 7 days (${from.toLocaleDateString()} – ${now.toLocaleDateString()})`];
     if(ana)for(const [,lab,val,sub] of ana.k)L.push(`• ${sentence(lab)}: ${val}${sub?' ('+sub+')':''}`);
     L.push(`Settings ID: ${settingsId()}`,fileLine(n,att),'',footer);return L.filter((x,i)=>x!==''||i>0).join('\n');}}),
-  data:()=>({title:'Share level data (CSV)',subject:`Level data: ${tankTitle()||'tank'}`,make:csvFile,text:(n,att)=>{const v=hist.filter(r=>r.mm!==null);
+  data:()=>({title:'Share level data (CSV)',subject:`Level data: ${tankTitle()||'tank'}`,make:csvFile,text:(n,att)=>{const v=histAll;
     const f=v.length?new Date(v[0].t*1000).toLocaleDateString():'',t=v.length?new Date(v[v.length-1].t*1000).toLocaleDateString():'';
-    return [headLine(),`Level data: ${v.length.toLocaleString()} readings (every 2 min) from ${f} to ${t}, and ${fills.length} fills.`,
+    return [headLine(),`Level data: ${v.length.toLocaleString()} readings (every 2 min${multi()?', '+SN().length+' compartments':''}) from ${f} to ${t}, and ${fillsAll.length} fills.`,
       'Opens in Excel or Google Sheets.',fileLine(n,att),'',footer].join('\n');}}),
   log:()=>({title:'Share connectivity log',subject:`Connectivity log: ${tankTitle()||'tank'}`,make:async()=>{await loadLog();return logFile();},text:(n,att)=>{
     const c=fn=>logRows.filter(fn).length;
@@ -1133,14 +1290,14 @@ function fillSite(){if(siteLoaded||!st.site)return;siteLoaded=true;
   $('inOrg').value=st.site.org;$('inBld').value=st.site.building;$('inTank').value=st.site.tank;}
 
 function fillForm(){const s=st;formLoaded=true;
-  setCm('inEmpty',s.empty);setCm('inFull',s.full);unitDef=s.units;
+  setCm('inEmpty',CS().empty);setCm('inFull',CS().full);unitDef=s.units;
   [...$('segUnits').children].forEach(b=>b.classList.toggle('on',+b.dataset.v===unitDef));
   $('inLeds').value=s.leds;$('inBr').value=s.brightness;$('brVal').textContent=s.brightness;
   $('inLow').value=s.lowAlarm;$('lowVal').textContent=s.lowAlarm;
   $('inRev').checked=s.reversed;$('inCbl').checked=s.colorByLevel;$('inTrig').value=s.trigUs;updateAmps();
   if(!$('inSsid').value&&s.wifi.saved)$('inSsid').value=s.wifi.saved;
   fillPower();fillAnalyticsForm();fillSite();
-  $('calNowE').textContent=fmtL(s.empty);$('calNowF').textContent=fmtL(s.full);rateLoaded=false;}
+  $('calNowE').textContent=fmtL(CS().empty);$('calNowF').textContent=fmtL(CS().full);rateLoaded=false;}
 // Worst case current: full tank, ~20 mA per lit color channel at full brightness, plus ~0.2 A for the board
 function updateAmps(){
   const n=Math.max(1,Math.min(300,parseInt($('inLeds').value)||1)),br=$('inBr').value/255,one=$('inCbl').checked;
@@ -1170,9 +1327,10 @@ async function post(url,data){
 }
 
 async function calNow(point){
-  if(!await ask(`Save the live reading (${fmtL(st.distance)}) as ${point==='empty'?'EMPTY':'FULL'}?`))return;
-  const j=await post('/api/calibrate',{point});if(j.ok){formLoaded=false;poll();}}
-async function calManual(){const j=await post('/api/calibrate',{empty:cmIn('inEmpty').toFixed(1),full:cmIn('inFull').toFixed(1)});
+  const c=CS();
+  if(!await ask(`Save the live reading${multi()?' of '+c.name:''} (${fmtL(c.distance)}) as ${point==='empty'?'EMPTY':'FULL'}?`))return;
+  const j=await post('/api/calibrate',{point,sensor:calSel});if(j.ok){formLoaded=false;poll();}}
+async function calManual(){const j=await post('/api/calibrate',{empty:cmIn('inEmpty').toFixed(1),full:cmIn('inFull').toFixed(1),sensor:calSel});
   if(j.ok){formLoaded=false;poll();}}
 async function saveSettings(){
   const n=parseInt($('inLeds').value);
@@ -1306,11 +1464,47 @@ window.addEventListener('hashchange',()=>showTab(location.hash.slice(1)));
 
 // ================= Analytics =================
 let hist=[],fills=[],aLoaded=false,rangeH=24,ana=null;
+let histAll=[],fillsAll=[],viewSel='total';
+// The analytics view: one compartment, or the whole tank on a 0..1000 scale (litres-weighted when every
+// compartment has a capacity). spanMm / pctOf / lpm and the leak limit follow the view.
+let AV={empty:120,full:25,capacity:0,leakMm:15,label:''};
+function setView(){
+  const S=SN(),n=S.length;
+  if(n===1)viewSel='0';
+  else if(viewSel!=='total'&&+viewSel>=n)viewSel='total';
+  if(viewSel!=='total'){const i=+viewSel,s=S[i];
+    AV={empty:s.empty,full:s.full,capacity:s.capacity||0,leakMm:st.leakCm*10,label:n>1?s.name:''};
+    hist=histAll.map(r=>({t:r.t,mm:r.mm[i]===undefined?null:r.mm[i],fill:!!(r.flags&(1<<i))}));
+    fills=fillsAll.filter(f=>f.sensor===i);
+    return;}
+  const allCap=S.every(s=>s.capacity>0),cap=allCap?S.reduce((a,s)=>a+s.capacity,0):0;
+  const avgSpan=S.reduce((a,s)=>a+(s.empty-s.full)*10,0)/n;
+  AV={empty:100,full:0,capacity:cap,leakMm:st.leakCm*10*1000/avgSpan,label:'Whole tank'};
+  const frac=r=>{let num=0,den=0,sum=0,k=0;
+    for(let i=0;i<n;i++){const mm=r.mm[i];if(mm===null||mm===undefined)continue;const s=S[i];
+      const p=Math.min(1,Math.max(0,(s.empty*10-mm)/((s.empty-s.full)*10)));sum+=p;k++;num+=p*(s.capacity||0);den+=s.capacity||0;}
+    if(k<n)return null;                                   // the whole tank needs every sensor's reading
+    return allCap&&den?num/den:sum/k;};
+  hist=histAll.map(r=>{const f=frac(r);return {t:r.t,mm:f===null?null:Math.round(1000-f*1000),fill:r.flags!==0};});
+  // A motor run fills the compartments together: merge overlapping fills
+  const merged=[];
+  for(const f of fillsAll.slice().sort((a,b)=>a.s-b.s)){const m=merged[merged.length-1];
+    if(m&&f.s<=m.e+60)m.e=Math.max(m.e,f.e);else merged.push({s:f.s,e:f.e});}
+  const at=t=>{let best=null;for(const r of hist){if(r.mm===null)continue;if(!best||Math.abs(r.t-t)<Math.abs(best.t-t))best=r;}return best?best.mm:null;};
+  fills=merged.map(m=>({s:m.s,e:m.e,smm:at(m.s),emm:at(m.e)})).filter(f=>f.smm!==null&&f.emm!==null&&f.smm>f.emm);}
+function renderViewSeg(){const S=SN(),seg=$('viewSeg');seg.hidden=S.length<2;if(S.length<2)return;
+  const opts=[['total','Whole tank'],...S.map((s,i)=>[String(i),s.name])],key=opts.map(o=>o.join(':')).join('|')+'#'+viewSel;
+  if(seg.dataset.k===key)return;seg.dataset.k=key;
+  seg.innerHTML=opts.map(([v,l])=>`<button data-v="${v}" class="${v===viewSel?'on':''}">${esc(l)}</button>`).join('');
+  [...seg.children].forEach(b=>b.onclick=()=>{viewSel=b.dataset.v;setView();renderAnalytics();});}
+// Live values for the view
+function viewNow(){if(viewSel==='total'||!multi())return {level:st.level,valid:totalValid(),filling:st.filling,fillRate:st.fillRate,fillEta:st.fillEta};
+  const s=SN()[+viewSel];return {level:s.level,valid:s.valid,filling:s.filling,fillRate:s.fillRate,fillEta:s.fillEta};}
 const DAY=86400,hh=h=>pad(h)+':00';
 const nowT=()=>st&&st.epoch?st.epoch:Math.floor(Date.now()/1000);
-const spanMm=()=>(st.empty-st.full)*10;
-const pctOf=mm=>Math.min(100,Math.max(0,(st.empty*10-mm)/spanMm()*100));
-const lpm=()=>st.capacity>0?st.capacity/spanMm():0;
+const spanMm=()=>(AV.empty-AV.full)*10;
+const pctOf=mm=>Math.min(100,Math.max(0,(AV.empty*10-mm)/spanMm()*100));
+const lpm=()=>AV.capacity>0?AV.capacity/spanMm():0;
 function amt(mm,signed){const s=signed&&mm>0?'+':'';const l=lpm();
   return l?s+Math.round(mm*l).toLocaleString()+' L':s+(mm/spanMm()*100).toFixed(1)+'%';}
 function dur(min){min=Math.round(min);return min<60?min+' min':Math.floor(min/60)+' h '+pad(min%60)+' min';}
@@ -1324,13 +1518,17 @@ async function loadAnalytics(){
   try{
     const [hb,fb]=await Promise.all([fetch('/api/history',{cache:'no-store'}).then(r=>r.arrayBuffer()),
                                      fetch('/api/fills',{cache:'no-store'}).then(r=>r.arrayBuffer())]);
-    const dv=new DataView(hb);hist=[];
-    for(let o=0;o+8<=hb.byteLength;o+=8){const mm=dv.getUint16(o+4,true);
-      hist.push({t:dv.getUint32(o,true),mm:mm===65535?null:mm,fill:dv.getUint16(o+6,true)&1});}
-    hist.sort((a,b)=>a.t-b.t);
-    const fv=new DataView(fb);fills=[];
-    for(let o=0;o+12<=fb.byteLength;o+=12)fills.push({s:fv.getUint32(o,true),e:fv.getUint32(o+4,true),smm:fv.getUint16(o+8,true),emm:fv.getUint16(o+10,true)});
-    fills.sort((a,b)=>a.s-b.s);aLoaded=true;
+    // History record: time, one distance (mm) per sensor, flags (bit i = sensor i filling). 8 bytes with one sensor.
+    const n=SN().length,rs=6+2*n,dv=new DataView(hb);histAll=[];
+    for(let o=0;o+rs<=hb.byteLength;o+=rs){const mm=[];
+      for(let i=0;i<n;i++){const v=dv.getUint16(o+4+2*i,true);mm.push(v===65535?null:v);}
+      histAll.push({t:dv.getUint32(o,true),mm,flags:dv.getUint16(o+4+2*n,true)});}
+    histAll.sort((a,b)=>a.t-b.t);
+    // Fill record: 16 bytes with the sensor number (firmware 3.0.0+), 12 bytes before
+    const fs=st.sensors?16:12,fv=new DataView(fb);fillsAll=[];
+    for(let o=0;o+fs<=fb.byteLength;o+=fs)fillsAll.push({s:fv.getUint32(o,true),e:fv.getUint32(o+4,true),
+      smm:fv.getUint16(o+8,true),emm:fv.getUint16(o+10,true),sensor:fs===16?fv.getUint8(o+12):0});
+    setView();aLoaded=true;
   }catch(e){aLoaded=false;}
   if(st)renderAnalytics();
 }
@@ -1351,7 +1549,7 @@ function allFills(){const f=fills.map(x=>({...x,live:false}));
   if(st.filling&&st.fillStart)f.push({s:st.fillStart,e:nowT(),smm:null,emm:null,live:true});return f;}
 
 function nightChecks(){
-  const res=[],now=nowT(),hours=((st.nightEnd-st.nightStart+24)%24)||24,leak=st.leakCm*10;
+  const res=[],now=nowT(),hours=((st.nightEnd-st.nightStart+24)%24)||24,leak=AV.leakMm;
   for(let k=0;k<7;k++){
     const d=new Date(now*1000);d.setDate(d.getDate()-k);d.setHours(st.nightEnd,0,0,0);
     const end=d.getTime()/1000,start=end-hours*3600;if(end>now)continue;
@@ -1436,6 +1634,7 @@ function barChart(box,labels,values,fmt,hl,short){
 }
 
 function renderAnalytics(){
+  renderViewSeg();
   const msg=$('aMsg');
   if(st.logStore!=='flash'){setAlert(msg,'bad','History needs flash storage. On ESP8266 select Tools → Flash Size → 4MB (FS:2MB) and upload again.');}
   else if(!st.epoch){setAlert(msg,'info','Waiting for the clock. History is recorded once the device knows the time: connect it to home Wi-Fi, or keep this page open (your browser sets the clock).');}
@@ -1477,8 +1676,9 @@ function renderAnalytics(){
     `"Water used (one drop)" when most of it happened within one hour, like a tap or flush. "Watch" from half of the limit.`;
   // ---- KPIs ----
   const k=[];const last=done[done.length-1];
-  if(st.filling)k.push(['live','NOW','Filling',st.fillEta>=0?`full in ~${dur(st.fillEta)} · ${fmtRate(st.fillRate)}`:fmtRate(st.fillRate)]);
-  else k.push(['','NOW',st.valid?Math.round(st.level)+'%':'–','motor off']);
+  const vn=viewNow();
+  if(vn.filling)k.push(['live','NOW','Filling',vn.fillEta>=0?`full in ~${dur(vn.fillEta)} · ${fmtRate(vn.fillRate)}`:fmtRate(vn.fillRate)]);
+  else k.push(['','NOW',vn.valid?Math.round(vn.level)+'%':'–','motor off']);
   k.push(['','LAST FILL',last?amt(last.smm-last.emm,true):'–',last?`${tLbl(last.s)} · ${dur((last.e-last.s)/60)}`:'none recorded yet']);
   k.push(['','EMPTY → FULL TAKES',rate>0?'≈ '+dur(spanMm()/rate):'–',rate>0?`average of ${done.length} fill${done.length>1?'s':''}`:'needs one full fill']);
   k.push(['','MOTOR TODAY',dur(motor[6]),`${af.filter(f=>f.s>=today).length} fill(s) · 7-day avg ${dur(motor.reduce((a,b)=>a+b,0)/7)}`]);
@@ -1499,7 +1699,7 @@ document.querySelectorAll('#rangeSeg button').forEach(b=>b.onclick=()=>{rangeH=+
 let rsz;window.addEventListener('resize',()=>{clearTimeout(rsz);rsz=setTimeout(()=>{if(aLoaded&&st)renderAnalytics();},200);});
 
 for(let i=0;i<24;i++){$('inNs').add(new Option(hh(i),i));$('inNe').add(new Option(hh(i),i));}
-function fillAnalyticsForm(){$('inCap').value=st.capacity;setCm('inFillCm',st.fillCm);$('inNs').value=st.nightStart;$('inNe').value=st.nightEnd;setCm('inLeak',st.leakCm);}
+function fillAnalyticsForm(){$('inCap').value=st.capacity;$('inCap').disabled=multi()||!isAdmin();setCm('inFillCm',st.fillCm);$('inNs').value=st.nightStart;$('inNe').value=st.nightEnd;setCm('inLeak',st.leakCm);}
 async function saveAnalytics(){
   if($('inNs').value===$('inNe').value){toast('Night window start and end must differ',true);return;}
   const j=await post('/api/settings',{capacity:$('inCap').value||0,fillCm:cmIn('inFillCm').toFixed(2),nightStart:$('inNs').value,nightEnd:$('inNe').value,leakCm:cmIn('inLeak').toFixed(2)});
@@ -1656,7 +1856,8 @@ function buildReport(logo){
     ['Period','Last 7 days, '+period],['Device',`${st.board}, firmware ${st.fw}`],
     ['Usage',`${USAGE[(st.profile||{}).usage||0]}, ${(LOCS[(st.profile||{}).location||0]||'').toLowerCase()}`],
     ['Tank',$('gTank').textContent+(st.capacity&&!(st.profile||{}).preset?', '+st.capacity.toLocaleString()+' L':'')],
-    ['Calibration',`empty at ${fmtL(st.empty)}, full at ${fmtL(st.full)}, water depth ${fmtMmL((st.empty-st.full)*10)}`],
+    multi()?['Compartments',SN().map(x=>`${x.name} ${x.valid?Math.round(x.level)+'%':'--'}`).join(', ')+` · report: ${AV.label}`]
+      :['Calibration',`empty at ${fmtL(st.empty)}, full at ${fmtL(st.full)}, water depth ${fmtMmL((st.empty-st.full)*10)}`],
     ['Settings ID',settingsId()+' (see Settings used for this report)']];
   info.forEach(([k,v],i)=>{const cx=M+10+(i%2)*(CW/2),cy=y+15+Math.floor(i/2)*15;
     P.text(cx,cy,k,7,{bold:true,color:C.mut});P.text(cx+56,cy,v,7.5);});
@@ -1669,7 +1870,7 @@ function buildReport(logo){
     P.text(cx+8,cy+29,val,12.5,{bold:true,color:cls==='bad'?C.red:cls==='warn'?C.warn:cls==='ok'?C.ok:cls==='live'?C.acc:C.txt});
     P.wrap(cx+8,cy+40,sub,6.5,kw-14,8,{color:C.mut});});
   y+=Math.ceil(A.k.length/4)*(kh+8)+10;
-  section('Level history, last 7 days');y+=12;levelChart(M,y,CW,135,168);y+=165;
+  section('Level history, last 7 days'+(AV.label&&multi()?' · '+AV.label:''));y+=12;levelChart(M,y,CW,135,168);y+=165;
   const half=(CW-20)/2;
   section('Motor run time per day',M,half);section('Water used per day',M+half+20,half);y+=10;
   bars(M,y,half,120,A.dl,A.motor,v=>Math.round(v)+'m');
@@ -1715,10 +1916,12 @@ function buildReport(logo){
     ['Society / building / tank',[S2.site.org,S2.site.building,S2.site.tank].map(v=>v||'-').join(' / ')],
     ['Usage and location',`${USAGE[p2.usage||0]}, ${(LOCS[p2.location||0]||'').toLowerCase()}`],
     ['Tank',$('gTank').textContent],
-    ['Rated capacity',st.capacity?st.capacity.toLocaleString()+' L':'not set (amounts shown in %)'],
-    ['Water depth when full',p2.depth?fmtMmL(p2.depth):'not set'],
-    ['Calibration: sensor to water',`empty ${fmtL(st.empty)}, full ${fmtL(st.full)} (range ${fmtMmL((st.empty-st.full)*10)})`],
-    ['Resolution','1 '+ul()+' of water = '+perUnitText(st.capacity,(st.empty-st.full)*10)],
+    ['Rated capacity',st.capacity?st.capacity.toLocaleString()+' L'+(multi()?' ('+SN().map(x=>`${x.name} ${x.capacity||'?'} L`).join(', ')+')':''):'not set (amounts shown in %)'],
+    ['Water depth when full',multi()?SN().map(x=>`${x.name} ${x.depth?fmtMmL(x.depth):'not set'}`).join(', '):p2.depth?fmtMmL(p2.depth):'not set'],
+    ['Calibration: sensor to water',SN().map(x=>(multi()?x.name+': ':'')+`empty ${fmtL(x.empty)}, full ${fmtL(x.full)}`).join('; ')],
+    ['Sensors',SN().map((x,i)=>(multi()?x.name+' ':'')+(st.pins&&st.pins[i]?`TRIG ${st.pins[i].trig} / ECHO ${st.pins[i].echo}`:'')).join(', ')+(multi()?` · LED strip: ${['whole tank','split per compartment','one strip per compartment'][st.ledMode||0]}`:'')],
+    ['Figures in this report',AV.label||'the tank'],
+    ['Resolution',multi()?'per compartment, see the dashboard':'1 '+ul()+' of water = '+perUnitText(st.capacity,(st.empty-st.full)*10)],
     ['Units in this report',{cm:'centimetres',mm:'millimetres',in:'inches'}[ul()]],
     ['Low water alarm',st.lowAlarm+'% of full'],
     ['Night leak check',`${hh(st.nightStart)}-${hh(st.nightEnd)}, possible leak above ${fmtL(st.leakCm)}`],

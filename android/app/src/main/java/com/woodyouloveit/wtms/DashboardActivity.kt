@@ -35,6 +35,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.lifecycle.lifecycleScope
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
+import kotlinx.coroutines.launch
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.progressindicator.LinearProgressIndicator
@@ -46,6 +51,7 @@ class DashboardActivity : AppCompatActivity() {
         const val EXTRA_ADDRESS = "address"
         const val EXTRA_TITLE = "title"
         const val EXTRA_RELEASE_HOTSPOT = "release_hotspot"   // leave the tank hotspot when this screen closes
+        const val EXTRA_DEVICE_ID = "device_id"               // saved tank, for its admin session
     }
 
     private lateinit var web: WebView
@@ -55,6 +61,10 @@ class DashboardActivity : AppCompatActivity() {
     private lateinit var baseUrl: String
     private var baseHost = ""
     private var boundToWifi = false
+    private var deviceId: String? = null
+    private var adminToken: String? = null      // admin session from the app's own login
+    private var syncToken = false               // hand the session to the dashboard page once it has loaded
+    private lateinit var toolbarRef: MaterialToolbar
 
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private val pickFile = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -80,6 +90,8 @@ class DashboardActivity : AppCompatActivity() {
         baseHost = Uri.parse(baseUrl).host ?: ""
 
         val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
+        toolbarRef = toolbar
+        deviceId = intent.getStringExtra(EXTRA_DEVICE_ID)
         toolbar.title = intent.getStringExtra(EXTRA_TITLE) ?: getString(R.string.app_name)
         toolbar.subtitle = address
         toolbar.setNavigationIcon(R.drawable.ic_back)
@@ -89,6 +101,7 @@ class DashboardActivity : AppCompatActivity() {
         toolbar.setOnMenuItemClickListener {
             when (it.itemId) {
                 R.id.action_reload -> { load(); true }
+                R.id.action_admin -> { if (adminToken != null) adminLogout() else adminLogin(); true }
                 R.id.action_browser -> { openExternal(Uri.parse(baseUrl)); true }
                 else -> false
             }
@@ -122,7 +135,114 @@ class DashboardActivity : AppCompatActivity() {
             override fun handleOnBackPressed() { if (web.canGoBack()) web.goBack() else finish() }
         })
 
-        if (savedInstanceState != null) web.restoreState(savedInstanceState) else load()
+        // A saved admin session is only used if the tank still accepts it
+        val saved = deviceId?.let { AuthStore.get(this, it) }
+        if (saved == null) {
+            if (savedInstanceState != null) web.restoreState(savedInstanceState) else load()
+        } else lifecycleScope.launch {
+            val api = TankApi(this@DashboardActivity, address).also { it.useToken(saved) }
+            if (api.isAdmin()) { adminToken = saved; syncToken = true }
+            else deviceId?.let { AuthStore.clear(this@DashboardActivity, it) }
+            updateAdminMenu()
+            load()
+        }
+        updateAdminMenu()
+    }
+
+    private fun updateAdminMenu() {
+        toolbarRef.menu.findItem(R.id.action_admin)?.title = getString(if (adminToken != null) R.string.admin_logout else R.string.admin_login)
+        toolbarRef.subtitle = (intent.getStringExtra(EXTRA_ADDRESS) ?: "") + if (adminToken != null) " · admin" else ""
+    }
+
+    /** Puts the app's admin session into the dashboard page (its own login uses the same storage). */
+    private fun pushTokenToPage(token: String?) {
+        val js = if (token != null)
+            "(function(){try{if(localStorage.getItem('wtmsAuth')!=='$token'){localStorage.setItem('wtmsAuth','$token');location.reload();}}catch(e){}})()"
+        else "(function(){try{localStorage.removeItem('wtmsAuth');location.reload();}catch(e){}})()"
+        web.evaluateJavascript(js, null)
+    }
+
+    private fun passwordField(hint: String): Pair<TextInputLayout, TextInputEditText> {
+        val til = TextInputLayout(this).apply { this.hint = hint; endIconMode = TextInputLayout.END_ICON_PASSWORD_TOGGLE }
+        val edit = TextInputEditText(til.context).apply {
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        til.addView(edit)
+        return til to edit
+    }
+
+    private fun dialogBox(vararg views: View): LinearLayout {
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(pad, pad / 2, pad, 0)
+            views.forEach { addView(it) }
+        }
+    }
+
+    private fun adminLogin() {
+        val (til, edit) = passwordField("Tank admin password")
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Admin login")
+            .setMessage("Unlocks settings, calibration, sensors, Wi-Fi, logs and firmware updates for this tank.")
+            .setView(dialogBox(til))
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Log in") { _, _ ->
+                val pw = edit.text?.toString().orEmpty()
+                val address = intent.getStringExtra(EXTRA_ADDRESS) ?: return@setPositiveButton
+                lifecycleScope.launch {
+                    val api = TankApi(this@DashboardActivity, address)
+                    try {
+                        api.login(pw)
+                        if (api.mustChangePassword) newPassword(api) else loggedIn(api.token)
+                    } catch (e: Exception) { toast(e.message ?: "Login failed") }
+                }
+            }
+            .show()
+    }
+
+    /** A tank with the default password: choose a new one before continuing. */
+    private fun newPassword(api: TankApi) {
+        val (t1, e1) = passwordField("New admin password (at least 6 characters)")
+        val (t2, e2) = passwordField("Repeat the new password")
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Choose an admin password")
+            .setMessage("This tank still uses the default password.")
+            .setView(dialogBox(t1, t2))
+            .setCancelable(false)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                val p1 = e1.text?.toString().orEmpty(); val p2 = e2.text?.toString().orEmpty()
+                when {
+                    p1.length < 6 -> { toast("Use at least 6 characters"); newPassword(api) }
+                    p1 != p2 -> { toast("The two passwords don't match"); newPassword(api) }
+                    p1 == "admin" -> { toast("Choose a password other than \"admin\""); newPassword(api) }
+                    else -> lifecycleScope.launch {
+                        try { api.changePassword(p1); loggedIn(api.token) } catch (e: Exception) { toast(e.message ?: "Could not save the password") }
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun loggedIn(token: String) {
+        adminToken = token
+        deviceId?.let { AuthStore.set(this, it, token) }
+        updateAdminMenu()
+        pushTokenToPage(token)
+        toast("Logged in as admin")
+    }
+
+    private fun adminLogout() {
+        val t = adminToken ?: return
+        val address = intent.getStringExtra(EXTRA_ADDRESS) ?: return
+        lifecycleScope.launch {
+            try { TankApi(this@DashboardActivity, address).also { it.useToken(t) }.logout() } catch (_: Exception) {}
+            adminToken = null
+            deviceId?.let { AuthStore.clear(this@DashboardActivity, it) }
+            updateAdminMenu()
+            pushTokenToPage(null)
+            toast("Logged out")
+        }
     }
 
     private fun load() {
@@ -153,7 +273,10 @@ class DashboardActivity : AppCompatActivity() {
         }
 
         override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) { progress.visibility = View.VISIBLE }
-        override fun onPageFinished(view: WebView, url: String?) { progress.visibility = View.GONE }
+        override fun onPageFinished(view: WebView, url: String?) {
+            progress.visibility = View.GONE
+            if (syncToken) { syncToken = false; adminToken?.let { pushTokenToPage(it) } }
+        }
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
             if (!request.isForMainFrame) return

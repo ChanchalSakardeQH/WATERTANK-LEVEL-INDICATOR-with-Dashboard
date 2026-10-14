@@ -28,4 +28,6 @@
     <string name="hint_ssid">Network name (SSID)</string>
     <string name="hint_wifi_pw">Network password (empty for open networks)</string>
     <string name="remote_hint">Remote address (optional), e.g. https://tanks.example.com</string>
+    <string name="admin_login">Admin login</string>
+    <string name="admin_logout">Log out (admin)</string>
 </resources>

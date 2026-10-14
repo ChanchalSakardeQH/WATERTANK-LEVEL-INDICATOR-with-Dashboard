@@ -337,11 +337,171 @@ def esp8266_3v3():
     return s.out()
 
 
+
+# ---------------------------------------------------------------- firmware 3.0.0: several sensors
+
+def v33(s, x, y):
+    """3.3V flag with its bottom at (x, y)."""
+    s.add(f"<polygon points='{x-7},{y} {x+7},{y} {x},{y-9}' fill='{C_3V3}'/>")
+    s.text(x, y - 13, "3V3", 12, "middle", "bold", C_3V3)
+
+
+def small_sensor(s, x, y, w, h, title, pins, side="right", probe=None):
+    """Compact sensor board: pins [(y, label)] on the given edge; probe = (cx, cy) or None."""
+    s.add(f"<rect x='{x}' y='{y}' width='{w}' height='{h}' rx='7' fill='#f3e5f5' stroke='#6a1b9a' stroke-width='1.6'/>")
+    tx = x + 8 if side == "right" else x + w - 8
+    anchor = "start" if side == "right" else "end"
+    s.text(tx, y + 16, title, 12, anchor, "bold", "#6a1b9a")
+    s.text(tx, y + h - 8, "VCC→3V3 · GND", 10, anchor, fill="#555")
+    for py, lab in pins:
+        if side == "right": s.text(x + w - 6, py + 4, lab, 10, "end", "bold", "#333", mono=True)
+        else:               s.text(x + 6, py + 4, lab, 10, "start", "bold", "#333", mono=True)
+    if probe:
+        cx, cy = probe
+        s.add(f"<circle cx='{cx}' cy='{cy}' r='10' fill='#212121' stroke='#555' stroke-width='1.5'/>")
+
+
+def esp32_multi():
+    """ESP32 with up to 4 sensors: sensor 1 on the right (as before), sensors 2-4 on the left."""
+    global BX0, BX1
+    keep = (BX0, BX1)
+    BX0, BX1 = 470, 670
+    try:
+        s = Svg(1330, 690)
+        s.text(40, 40, "ESP32 DevKit V1: up to 4 ultrasonic sensors (one per tank compartment)", 20, weight="bold")
+        s.text(40, 62, "Sensor 1 D15/D2 · sensor 2 D32/D35 · sensor 3 D33/D34 · sensor 4 D25/D26 · LED strip G16 · "
+                       "every sensor powered from 3V3", 13, fill="#555")
+        left = ["EN", "VP 36", "VN 39", "D34", "D35", "D32", "D33", "D25", "D26", "D27",
+                "D14", "D12", "D13", "GND", "VIN"]
+        right = ["D23", "D22", "TX0", "RX0", "D21", "D19", "D18", "D5", "TX2 17", "RX2 16",
+                 "D4", "D2", "D15", "GND", "3V3"]
+        used = {"L14": C_5V, "L3": C_ECHO, "L4": C_ECHO, "L5": C_TRIG, "L6": C_TRIG, "L7": C_TRIG, "L8": C_ECHO,
+                "R9": C_DIN, "R11": C_ECHO, "R12": C_TRIG, "R13": C_GND, "R14": C_3V3}
+        draw_board(s, "ESP32", "DevKit V1 · 30-pin", left, right, used)
+        y = pin_y(14)
+        s.wire([(BX0, y), (BX0 - 40, y), (BX0 - 40, y - 16)], C_5V); s.v5(BX0 - 40, y - 16)
+
+        # ---- sensors 2-4 on the left: every signal wire is straight ----
+        # sensor 2: ECHO D35 (L4), TRIG D32 (L5)
+        y2e, y2t = pin_y(4), pin_y(5)
+        small_sensor(s, 300, 206, 140, 62, "Sensor 2", [(y2e, "TX=ECHO"), (y2t, "RX=TRIG")], probe=(282, 237))
+        s.wire([(440, y2e), (BX0, y2e)], C_ECHO); s.wire([(440, y2t), (BX0, y2t)], C_TRIG)
+        # sensor 3: ECHO D34 (L3), TRIG D33 (L6), wires pass above and below sensor 2
+        y3e, y3t = pin_y(3), pin_y(6)
+        small_sensor(s, 60, 180, 160, 116, "Sensor 3", [(y3e, "TX=ECHO"), (y3t, "RX=TRIG")], probe=(40, 238))
+        s.wire([(220, y3e), (BX0, y3e)], C_ECHO); s.wire([(220, y3t), (BX0, y3t)], C_TRIG)
+        # sensor 4: TRIG D25 (L7), ECHO D26 (L8)
+        y4t, y4e = pin_y(7), pin_y(8)
+        small_sensor(s, 300, 288, 140, 58, "Sensor 4", [(y4t, "RX=TRIG"), (y4e, "TX=ECHO")], probe=(282, 317))
+        s.wire([(440, y4t), (BX0, y4t)], C_TRIG); s.wire([(440, y4e), (BX0, y4e)], C_ECHO)
+        # power note for the optional sensors
+        s.add("<rect x='40' y='372' width='366' height='92' rx='6' fill='#f3e5f5' stroke='#6a1b9a' stroke-width='1.5'/>")
+        s.text(223, 394, "Sensors 2-4: power and ground", 13, "middle", "bold", "#6a1b9a")
+        s.text(223, 414, "Each sensor's \"5V\" pin → ESP32 3V3, each GND → GND.", 11, "middle", fill="#333")
+        s.text(223, 430, "The board has one 3V3 pin: join the wires on a", 11, "middle", fill="#333")
+        s.text(223, 446, "terminal strip. Wire only the sensors you use.", 11, "middle", fill="#333")
+
+        # ---- sensor 1 on the right: four straight wires (unchanged wiring) ----
+        sx, w = 970, 200
+        ys = {"echo": pin_y(11), "trig": pin_y(12), "gnd": pin_y(13), "vcc": pin_y(14)}
+        top, bot = ys["echo"] - 30, ys["vcc"] + 24
+        s.box(sx, top, w, bot - top, "Sensor 1", "AJ-SR04M / JSN", fill="#f3e5f5", stroke="#6a1b9a")
+        for key, lab, col in (("echo", "TX = ECHO", C_ECHO), ("trig", "RX = TRIG", C_TRIG),
+                              ("gnd", "GND", C_GND), ("vcc", "5V pin", C_3V3)):
+            s.wire([(BX1, ys[key]), (sx, ys[key])], col)
+            s.pin_label(sx + 8, ys[key], lab)
+        s.text(800, ys["vcc"] - 7, "3.3V (to every sensor)", 12, "middle", "bold", C_3V3)
+        s.wire([(sx + 160, bot), (sx + 160, bot + 12)], C_GND); s.gnd(sx + 160, bot + 12)
+        s.wire([(sx + w, (top + bot) / 2), (sx + w + 40, (top + bot) / 2)], "#555", 3)
+        s.add(f"<circle cx='{sx+w+62}' cy='{(top+bot)/2}' r='22' fill='#212121' stroke='#555' stroke-width='2'/>")
+        s.add(f"<circle cx='{sx+w+62}' cy='{(top+bot)/2}' r='12' fill='#616161'/>")
+        s.add("<rect x='702' y='528' width='262' height='56' rx='6' fill='#fff3e0' stroke='#e65100' stroke-width='1.5'/>")
+        s.text(833, 547, "Every sensor's 5V pin → 3V3 only", 12, "middle", "bold", "#e65100")
+        s.text(833, 563, "Sensor 1: D15 = TRIG, D2 = ECHO, not swapped:", 11, "middle", fill="#e65100")
+        s.text(833, 577, "D2 must be LOW while uploading", 11, "middle", fill="#e65100")
+
+        # ---- LED strip and supply ----
+        g16, din = pin_y(9), 150
+        led_block(s, sx, din - 36, din)
+        s.wire([(BX1, g16), (800, g16), (800, din), (890, din)], C_DIN)
+        s.resistor_h(890, sx, din, C_DIN, "330Ω")
+        power_block(s, sx + 40, 250)
+        legend(s, 620, [("+5V", C_5V), ("3.3V", C_3V3), ("GND", C_GND), ("TRIG", C_TRIG),
+                        ("ECHO", C_ECHO), ("LED data", C_DIN)])
+        return s.out()
+    finally:
+        BX0, BX1 = keep
+
+
+def esp8266_multi():
+    """NodeMCU with 2 sensors (sensor 2 on D7/D1, shown with net labels)."""
+    s = Svg(1000, 760)
+    s.text(40, 40, "NodeMCU ESP8266: 2 sensors (one per compartment)", 20, weight="bold")
+    s.text(40, 62, "Sensor 1 TRIG D5 / ECHO D6 · sensor 2 TRIG D7 / ECHO D1 · LED strip D2 · sensors powered from 3V3",
+           13, fill="#555")
+    left = ["A0", "RSV", "RSV", "SD3", "SD2", "SD1", "CMD", "SD0", "CLK", "GND",
+            "3V3", "EN", "RST", "GND", "VIN"]
+    right = ["D0", "D1 GPIO5", "D2 GPIO4", "D3", "D4", "3V3", "GND", "D5 GPIO14", "D6 GPIO12", "D7 GPIO13",
+             "D8", "RX", "TX", "GND", "3V3"]
+    used = {"L14": C_5V, "R13": C_GND, "R2": C_DIN, "R7": C_TRIG, "R8": C_ECHO, "R5": C_3V3,
+            "R1": C_ECHO, "R9": C_TRIG}
+    draw_board(s, "NodeMCU", "ESP8266 · 30-pin", left, right, used)
+    board_power(s, 14, 13)
+
+    sx = 640
+    d2 = pin_y(2)
+    led_block(s, sx, d2 - 36, d2)
+    s.wire([(BX1, d2), (560, d2)], C_DIN)
+    s.resistor_h(560, sx, d2, C_DIN, "330Ω")
+
+    # Sensor 1 (as before)
+    trig_y, echo_y = pin_y(7), pin_y(8)
+    x, y, w = sx, trig_y - 40, 200
+    h = (echo_y - y) + 40
+    s.box(x, y, w, h, "Sensor 1", "AJ-SR04M / JSN", fill="#f3e5f5", stroke="#6a1b9a")
+    s.pin_label(x + 8, trig_y, "RX=TRIG"); s.pin_label(x + 8, echo_y, "TX=ECHO")
+    s.text(x + 60, y + 16, "5V pin", 11, "middle", "bold", "#333", mono=True)
+    s.text(x + 160, y + h - 8, "GND", 11, "middle", "bold", "#333", mono=True)
+    s.wire([(x + 160, y + h), (x + 160, y + h + 14)], C_GND); s.gnd(x + 160, y + h + 14)
+    v3 = pin_y(5)
+    s.wire([(BX1, v3), (x + 60, v3), (x + 60, y)], C_3V3)
+    s.text(470, v3 - 8, "3.3V", 12, "middle", "bold", C_3V3)
+    s.wire([(BX1, trig_y), (sx, trig_y)], C_TRIG)
+    s.wire([(BX1, echo_y), (sx, echo_y)], C_ECHO)
+
+    # Sensor 2 through net labels: D1 -> "S2 ECHO", D7 -> "S2 TRIG"
+    def tag(xx, yy, text, col):
+        s.add(f"<rect x='{xx}' y='{yy-10}' width='74' height='20' rx='4' fill='#ffffff' stroke='{col}' stroke-width='1.8'/>")
+        s.text(xx + 37, yy + 4, text, 11, "middle", "bold", col, mono=True)
+    d1, d7 = pin_y(1), pin_y(9)
+    s.wire([(BX1, d1), (390, d1)], C_ECHO); tag(390, d1, "S2 ECHO", C_ECHO)
+    s.wire([(BX1, d7), (390, d7)], C_TRIG); tag(390, d7, "S2 TRIG", C_TRIG)
+    bx, by = 640, 560
+    s.box(bx, by, 200, 96, "Sensor 2", "AJ-SR04M / JSN", fill="#f3e5f5", stroke="#6a1b9a")
+    for yy, lab, text, col in ((by + 30, "RX=TRIG", "S2 TRIG", C_TRIG), (by + 66, "TX=ECHO", "S2 ECHO", C_ECHO)):
+        s.wire([(bx - 40, yy), (bx, yy)], col); tag(bx - 114, yy, text, col); s.pin_label(bx + 8, yy, lab)
+    s.wire([(bx + 60, by), (bx + 60, by - 16)], C_3V3); v33(s, bx + 60, by - 16)
+    s.text(bx + 60, by + 14, "5V pin", 10, "middle", "bold", "#333", mono=True)
+    s.wire([(bx + 160, by + 96), (bx + 160, by + 108)], C_GND); s.gnd(bx + 160, by + 108)
+    s.text(bx + 160, by + 88, "GND", 10, "middle", "bold", "#333", mono=True)
+    s.add(f"<circle cx='{bx+232}' cy='{by+48}' r='18' fill='#212121' stroke='#555' stroke-width='2'/>")
+    s.text(380, 520, "Same-named tags are connected: D7 → sensor 2 RX, D1 ← sensor 2 TX", 11, "start", fill="#555")
+
+    s.add("<rect x='40' y='560' width='260' height='76' rx='6' fill='#fff3e0' stroke='#e65100' stroke-width='1.5'/>")
+    s.text(170, 580, "Both sensors' 5V pin → 3V3 only", 12, "middle", "bold", "#e65100")
+    s.text(170, 598, "Never the 5V supply: TX would put", 11, "middle", fill="#e65100")
+    s.text(170, 613, "5V into D6 / D1. NodeMCU: 2 sensors max.", 11, "middle", fill="#e65100")
+    power_block(s, sx + 40, 410)
+    legend(s, 690, [("+5V", C_5V), ("3.3V", C_3V3), ("GND", C_GND), ("TRIG", C_TRIG),
+                    ("ECHO", C_ECHO), ("LED data", C_DIN)])
+    return s.out()
+
 if __name__ == "__main__":
     import os, cairosvg
     out = os.path.dirname(os.path.abspath(__file__))
     os.makedirs(out, exist_ok=True)
-    for name, svg in (("wiring_esp32", esp32()), ("wiring_esp8266", esp8266()), ("wiring_esp8266_3v3", esp8266_3v3())):
+    for name, svg in (("wiring_esp32", esp32()), ("wiring_esp8266", esp8266()), ("wiring_esp8266_3v3", esp8266_3v3()),
+                      ("wiring_esp32_multi", esp32_multi()), ("wiring_esp8266_multi", esp8266_multi())):
         with open(f"{out}/{name}.svg", "w") as f:
             f.write(svg)
         cairosvg.svg2png(bytestring=svg.encode(), write_to=f"{out}/{name}.png")

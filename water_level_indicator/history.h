@@ -20,32 +20,40 @@
   SPDX-License-Identifier: GPL-3.0-or-later
 */
 
-// Tank history and fill (motor run) detection, stored in flash.
+// Tank history and fill (motor run) detection, stored in flash. One or more sensors (tank compartments).
 //
-//  /hist.bin   one record every 2 minutes: time, distance (mm), flags   (8 bytes)
-//              two files of 5040 records = 14 days
-//  /fills.bin  one record per detected fill: start, end, start/end distance (12 bytes)
-//              two files of 100 records = 200 fills
+//  /hist.bin    one record every 2 minutes: time, distance (mm) per sensor, flags (bit i = sensor i filling)
+//               record size 4 + 2*n + 2 bytes (8 bytes for one sensor, the same layout as before 3.0.0)
+//               two files of about 40 KB each: 14 days with 1 sensor, 11 with 2, 8 with 4
+//  /fill2.bin   one record per detected fill: start, end, start/end distance, sensor (16 bytes)
+//               two files of 100 records
 //
 // Distances are stored (not %), so the dashboard can re-calculate levels after recalibration.
+// Changing the number of sensors clears the history (records would no longer line up).
 #pragma once
 #include <Arduino.h>
 #include <LittleFS.h>
 #include "event_log.h"
 
+#define WTMS_MAX_SENSORS 4
+String sensorWho(int i);                          // "<name>: " for log lines (defined in the sketch)
 #define HIST_FILE      "/hist.bin"
 #define HIST_OLD       "/hist.old.bin"
-#define HIST_MAX_RECS  5040
-#define FILL_FILE      "/fills.bin"
-#define FILL_OLD       "/fills.old.bin"
+#define HIST_FILE_BYTES 40320              // per file (5040 records of 8 bytes)
+#define FILL_FILE      "/fill2.bin"
+#define FILL_OLD       "/fill2.old.bin"
+#define FILL_V1_FILE   "/fills.bin"        // before 3.0.0: 12-byte records, one sensor
+#define FILL_V1_OLD    "/fills.old.bin"
 #define FILL_MAX_RECS  100
 #define HIST_INVALID   0xFFFF
 
 const unsigned long HIST_INTERVAL_MS = 120000;   // 2 minutes
 const unsigned long FILL_SAMPLE_MS   = 10000;    // fill detector sample every 10 s
 
-struct HistRec { uint32_t t; uint16_t mm; uint16_t flags; };               // flags bit0 = filling
-struct FillRec { uint32_t start; uint32_t end; uint16_t startMm; uint16_t endMm; };
+struct FillRecV1 { uint32_t start; uint32_t end; uint16_t startMm; uint16_t endMm; };
+struct FillRec   { uint32_t start; uint32_t end; uint16_t startMm; uint16_t endMm; uint8_t sensor; uint8_t pad[3]; };
+
+uint8_t histSensors = 1;                          // sensors per history record (set from the configuration)
 
 void appendRec(const char* path, const char* old, const void* rec, size_t size, size_t maxRecs) {
   if (!logFsOK) return;
@@ -66,10 +74,30 @@ void historyClear() {
   LittleFS.remove(FILL_FILE); LittleFS.remove(FILL_OLD);
 }
 
-// ================= Fill detector =================
+// Fill records from firmware before 3.0.0 belong to sensor 1: convert them once
+void historyMigrate() {
+  if (!logFsOK) return;
+  const char* olds[2] = {FILL_V1_OLD, FILL_V1_FILE};
+  bool any = false;
+  for (const char* path : olds) {
+    if (!LittleFS.exists(path)) continue;
+    File f = LittleFS.open(path, "r");
+    FillRecV1 v;
+    while (f && f.read((uint8_t*)&v, sizeof(v)) == sizeof(v)) {
+      FillRec r = { v.start, v.end, v.startMm, v.endMm, 0, {0, 0, 0} };
+      appendRec(FILL_FILE, FILL_OLD, &r, sizeof(r), FILL_MAX_RECS);
+      any = true;
+    }
+    if (f) f.close();
+    LittleFS.remove(path);
+  }
+  if (any) logWrite('I', "sys", "Fill records converted to the multi-sensor format");
+}
+
+// ================= Fill detector (one per sensor) =================
 // Compares the median of the 5 oldest and 5 newest samples in a 3-minute window.
-// Filling starts when the water rises faster than the threshold (and by 1 cm or more) for 30 s,
-// and ends when it rises slower than half the threshold for 60 s, or the tank is full.
+// Filling starts when the water rises faster than the threshold (and by 1.5 cm or more) for 30 s,
+// and ends when it rises slower than half the threshold for 60 s, or the compartment is full.
 struct FillDetector {
   static const int N = 19;               // 19 samples x 10 s = 3 minutes
   uint16_t buf[N];
@@ -80,7 +108,11 @@ struct FillDetector {
   uint16_t startMm = 0, bestMm = 0;
   float    rateMmMin = 0;                // current rise speed (distance decrease)
   unsigned long lastSample = 0, lastValid = 0;
-} fd;
+};
+FillDetector fd[WTMS_MAX_SENSORS];
+
+void fillReset() { for (int i = 0; i < WTMS_MAX_SENSORS; i++) fd[i] = FillDetector(); }
+bool anyFilling(int n) { for (int i = 0; i < n; i++) if (fd[i].filling) return true; return false; }
 
 // Median of 5 consecutive samples starting at ring index `from`
 static uint16_t med5(const uint16_t* buf, int from, int n) {
@@ -95,96 +127,106 @@ static uint16_t med5(const uint16_t* buf, int from, int n) {
   return v[2];
 }
 
-void endFill(const char* reason) {
-  fd.filling = false;
-  fd.upCount = fd.downCount = 0;
-  int rise = (int)fd.startMm - (int)fd.bestMm;
-  long dur = (long)fd.bestT - (long)fd.startT;
-  if (rise >= 30 && dur >= 180 && fd.startT) {                 // at least 3 cm over 3 minutes
-    FillRec r = { fd.startT, fd.bestT, fd.startMm, fd.bestMm };
+void endFill(int i, const char* reason) {
+  const String who = sensorWho(i);
+  FillDetector& f = fd[i];
+  f.filling = false;
+  f.upCount = f.downCount = 0;
+  int rise = (int)f.startMm - (int)f.bestMm;
+  long dur = (long)f.bestT - (long)f.startT;
+  if (rise >= 30 && dur >= 180 && f.startT) {                 // at least 3 cm over 3 minutes
+    FillRec r = { f.startT, f.bestT, f.startMm, f.bestMm, (uint8_t)i, {0, 0, 0} };
     appendRec(FILL_FILE, FILL_OLD, &r, sizeof(r), FILL_MAX_RECS);
-    logWrite('I', "tank", String("Filling stopped (") + reason + "): +" + String(rise / 10.0, 1) + " cm in " +
+    logWrite('I', "tank", who + String("Filling stopped (") + reason + "): +" + String(rise / 10.0, 1) + " cm in " +
                           String(dur / 60.0, 1) + " min, " + String(rise / 10.0 / (dur / 60.0), 2) + " cm/min");
   } else {
-    logWrite('I', "tank", String("Filling stopped (") + reason + "), too small to record");
+    logWrite('I', "tank", who + String("Filling stopped (") + reason + "), too small to record");
   }
 }
 
-// validCm: current median distance (cm) or <0 if no reading
-void fillTask(float distCm, uint16_t thrMmMin, float fullCm) {
+// distCm: current median distance (cm) of sensor i, or <0 if no reading
+void fillTask(int i, float distCm, uint16_t thrMmMin, float fullCm) {
+  FillDetector& f = fd[i];
   unsigned long now = millis();
-  if (now - fd.lastSample < FILL_SAMPLE_MS) return;
-  fd.lastSample = now;
+  if (now - f.lastSample < FILL_SAMPLE_MS) return;
+  f.lastSample = now;
 
   if (distCm < 0) {
-    if (fd.filling && now - fd.lastValid > 300000) endFill("sensor fault");
+    if (f.filling && now - f.lastValid > 300000) endFill(i, "sensor fault");
     return;
   }
-  fd.lastValid = now;
+  f.lastValid = now;
   uint16_t mm = (uint16_t)(distCm * 10 + 0.5);
-  fd.buf[fd.head] = mm;
-  fd.head = (fd.head + 1) % FillDetector::N;
-  if (fd.count < FillDetector::N) { fd.count++; return; }
+  f.buf[f.head] = mm;
+  f.head = (f.head + 1) % FillDetector::N;
+  if (f.count < FillDetector::N) { f.count++; return; }
 
   const int N = FillDetector::N;
-  uint16_t oldMed = med5(fd.buf, fd.head, N);                 // 5 oldest
-  uint16_t newMed = med5(fd.buf, fd.head + N - 5, N);         // 5 newest
+  uint16_t oldMed = med5(f.buf, f.head, N);                 // 5 oldest
+  uint16_t newMed = med5(f.buf, f.head + N - 5, N);         // 5 newest
   // The two medians are centred (N-5) samples apart: 14 x 10 s = 140 s
   const float spanMin = (N - 5) * (FILL_SAMPLE_MS / 1000.0f) / 60.0f;
-  fd.rateMmMin = ((float)oldMed - (float)newMed) / spanMin;
+  f.rateMmMin = ((float)oldMed - (float)newMed) / spanMin;
 
-  if (!fd.filling) {
-    if (fd.rateMmMin >= thrMmMin && oldMed - newMed >= 15) {   // and at least 1.5 cm real rise
-      if (++fd.upCount >= 3) {
+  if (!f.filling) {
+    if (f.rateMmMin >= thrMmMin && oldMed - newMed >= 15) {  // and at least 1.5 cm real rise
+      if (++f.upCount >= 3) {
         uint32_t t = nowEpoch();
-        fd.filling = true;
-        fd.downCount = 0;
-        fd.startT = t ? t - 90 : 0;                            // detection lags the real start by ~1-2 min
-        fd.startMm = oldMed;
-        fd.bestMm = newMed;
-        fd.bestT = t;
-        logWrite('I', "tank", "Filling started, rising " + String(fd.rateMmMin / 10.0, 2) + " cm/min");
+        f.filling = true;
+        f.downCount = 0;
+        f.startT = t ? t - 90 : 0;                            // detection lags the real start by ~1-2 min
+        f.startMm = oldMed;
+        f.bestMm = newMed;
+        f.bestT = t;
+        logWrite('I', "tank", sensorWho(i) + "Filling started, rising " + String(f.rateMmMin / 10.0, 2) + " cm/min");
       }
     } else {
-      fd.upCount = 0;
+      f.upCount = 0;
     }
   } else {
-    if (newMed < fd.bestMm) { fd.bestMm = newMed; fd.bestT = nowEpoch(); }
+    if (newMed < f.bestMm) { f.bestMm = newMed; f.bestT = nowEpoch(); }
     bool full = newMed <= (uint16_t)(fullCm * 10 + 5);
-    if (full || fd.rateMmMin < thrMmMin / 2.0f) {
-      if (++fd.downCount >= (full ? 1 : 6)) endFill(full ? "tank full" : "level stopped rising");
+    if (full || f.rateMmMin < thrMmMin / 2.0f) {
+      if (++f.downCount >= (full ? 1 : 6)) endFill(i, full ? "full" : "level stopped rising");
     } else {
-      fd.downCount = 0;
+      f.downCount = 0;
     }
   }
 }
 
-// Minutes until full at the current rate, -1 if unknown
-float fillEtaMin(float distCm, float fullCm) {
-  if (!fd.filling || fd.rateMmMin <= 0.5 || distCm < 0) return -1;
+// Minutes until sensor i is full at the current rate, -1 if unknown
+float fillEtaMin(int i, float distCm, float fullCm) {
+  if (!fd[i].filling || fd[i].rateMmMin <= 0.5 || distCm < 0) return -1;
   float left = (distCm - fullCm) * 10;
-  return left <= 0 ? 0 : left / fd.rateMmMin;
+  return left <= 0 ? 0 : left / fd[i].rateMmMin;
 }
 
 // ================= History recorder =================
-struct { double sum = 0; uint16_t n = 0; unsigned long last = 0, lastSec = 0; } hacc;
+struct HistAcc { double sum[WTMS_MAX_SENSORS]; uint16_t n[WTMS_MAX_SENSORS]; unsigned long last = 0, lastSec = 0; } hacc;
 
-void historyTask(float distCm) {
+// dist: current distance (cm) per sensor, <0 = no reading
+void historyTask(const float* dist) {
+  const int n = histSensors;
   unsigned long now = millis();
   if (now - hacc.lastSec >= 1000) {                            // average of 1 s samples
     hacc.lastSec = now;
-    if (distCm >= 0) { hacc.sum += distCm; hacc.n++; }
+    for (int i = 0; i < n; i++) if (dist[i] >= 0) { hacc.sum[i] += dist[i]; hacc.n[i]++; }
   }
   if (now - hacc.last < HIST_INTERVAL_MS) return;
   hacc.last = now;
   uint32_t t = nowEpoch();
   if (t) {                                                     // needs a real clock
-    HistRec r;
-    r.t = t;
-    r.mm = hacc.n ? (uint16_t)(hacc.sum / hacc.n * 10 + 0.5) : HIST_INVALID;
-    r.flags = fd.filling ? 1 : 0;
-    appendRec(HIST_FILE, HIST_OLD, &r, sizeof(r), HIST_MAX_RECS);
+    uint8_t rec[4 + 2 * WTMS_MAX_SENSORS + 2];
+    size_t size = 4 + 2 * n + 2;
+    memcpy(rec, &t, 4);
+    uint16_t flags = 0;
+    for (int i = 0; i < n; i++) {
+      uint16_t mm = hacc.n[i] ? (uint16_t)(hacc.sum[i] / hacc.n[i] * 10 + 0.5) : HIST_INVALID;
+      memcpy(rec + 4 + 2 * i, &mm, 2);
+      if (fd[i].filling) flags |= (1 << i);
+    }
+    memcpy(rec + 4 + 2 * n, &flags, 2);
+    appendRec(HIST_FILE, HIST_OLD, rec, size, HIST_FILE_BYTES / size);
   }
-  hacc.sum = 0;
-  hacc.n = 0;
+  for (int i = 0; i < WTMS_MAX_SENSORS; i++) { hacc.sum[i] = 0; hacc.n[i] = 0; }
 }

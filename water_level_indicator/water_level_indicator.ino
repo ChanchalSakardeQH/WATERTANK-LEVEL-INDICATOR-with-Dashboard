@@ -21,7 +21,7 @@
 */
 
 /*
-  Water Tanks Monitor System (WTMS)                        firmware 2.12.0
+  Water Tanks Monitor System (WTMS)                        firmware 3.0.0
   ESP32 DevKit or ESP8266 NodeMCU + AJ-SR04M / JSN-SR04T + WS2812B strip (1-300 LEDs, set in the dashboard)
 
   - Each device is named in the dashboard: society / organisation, building, tank.
@@ -55,11 +55,16 @@
   #define BOARD_TAG  "esp32"      // also marks firmware files for the OTA check
   #define WIFI_OPEN  WIFI_AUTH_OPEN
   #define LED_PIN   16   // G16 -> 330R -> strip DIN
-  // Sensor on 4 neighbouring pins: 3V3, GND, D15, D2 (one 4-pin connector).
-  // D15 and D2 are boot strapping pins: TRIG must be on D15 (output) and ECHO on D2,
-  // because the sensor's echo rests LOW, which keeps uploading over USB working.
-  #define TRIG_PIN  15   // D15 -> sensor TRIG (AJ-SR04M: RX)
-  #define ECHO_PIN   2   // D2  <- sensor ECHO (AJ-SR04M: TX), 3.3V only (sensor on 3V3)
+  // Ultrasonic sensors, one per tank compartment: TRIG -> sensor RX, ECHO <- sensor TX, all powered from 3V3.
+  // Sensor 1 uses 4 neighbouring pins (3V3, GND, D15, D2). D15 and D2 are boot strapping pins:
+  // TRIG must be on D15 and ECHO on D2 (the echo rests LOW, which keeps USB uploads working).
+  // Sensors 2-4 avoid every strapping pin; ECHO 2 and 3 are input-only pins. GPIO36/39 (VP/VN) are
+  // not used: they can glitch while Wi-Fi is on, which would cut echo timings short.
+  const uint8_t MAX_SENSORS = 4;
+  const uint8_t TRIG_PINS[MAX_SENSORS] = {15, 32, 33, 25};
+  const uint8_t ECHO_PINS[MAX_SENSORS] = { 2, 35, 34, 26};
+  const char* const TRIG_NAMES[MAX_SENSORS] = {"D15", "D32", "D33", "D25"};
+  const char* const ECHO_NAMES[MAX_SENSORS] = {"D2", "D35", "D34", "D26"};
 #elif defined(ESP8266)
   #include <ESP8266WiFi.h>
   #include <ESP8266WebServer.h>
@@ -70,8 +75,12 @@
   #define WIFI_OPEN  ENC_TYPE_NONE
   ADC_MODE(ADC_VCC);     // lets the ESP8266 measure its own supply voltage (A0 is not used)
   #define LED_PIN    4   // D2 -> 330R -> strip DIN
-  #define TRIG_PIN  14   // D5 -> sensor TRIG (AJ-SR04M: RX)
-  #define ECHO_PIN  12   // D6 <- sensor ECHO (AJ-SR04M: TX)
+  // Ultrasonic sensors (up to 2): TRIG -> sensor RX, ECHO <- sensor TX. D3, D4 and D8 are avoided (boot pins).
+  const uint8_t MAX_SENSORS = 2;
+  const uint8_t TRIG_PINS[MAX_SENSORS] = {14, 13};          // D5, D7
+  const uint8_t ECHO_PINS[MAX_SENSORS] = {12, 5};           // D6, D1
+  const char* const TRIG_NAMES[MAX_SENSORS] = {"D5", "D7"};
+  const char* const ECHO_NAMES[MAX_SENSORS] = {"D6", "D1"};
 #else
   #error "Select an ESP32 or ESP8266 board in Tools > Board"
 #endif
@@ -92,7 +101,7 @@
 #include "auth.h"
 #include "history.h"
 
-#define FW_VERSION  "2.12.0"
+#define FW_VERSION  "3.0.0"
 #define PRODUCT     "Water Tanks Monitor System"
 #define DEFAULT_LEDS 30
 #define MAX_LEDS     300
@@ -241,6 +250,72 @@ TankProfile prof;
 
 void saveProfile() { prof.magic = PROF_MAGIC; EEPROM.put(PROF_ADDR, prof); EEPROM.commit(); }
 
+// ================= Sensors / compartments (EEPROM offset 512) =================
+// One ultrasonic sensor per tank compartment, each with its own name, calibration and capacity.
+// Firmware before 3.0.0 had one sensor: its calibration and capacity become sensor 1 on the first start.
+struct SensorCfg {
+  char     name[17];
+  uint8_t  pad[3];
+  float    emptyCm, fullCm;   // sensor face -> water when empty / full
+  uint32_t capacityL;         // litres, 0 = not set
+  uint16_t depthMm;           // water depth when full (bottom -> overflow line)
+  uint16_t reserved;
+};
+struct SensorStore {
+  uint32_t  magic;
+  uint8_t   count;            // sensors in use, 1..MAX_SENSORS
+  uint8_t   ledMode;          // 0 total level, 1 strip split per compartment (dark LED between), 2 one strip per compartment (chained)
+  uint8_t   reserved[2];
+  SensorCfg s[WTMS_MAX_SENSORS];
+};
+const uint32_t SENS_MAGIC   = 0x57545331;     // "WTS1"
+const int      SENS_ADDR    = 512;
+const int      EEPROM_BYTES = 1024;
+SensorStore sens;
+
+void defaultSensorName(int i, char* out) { snprintf(out, 17, "Compartment %c", 'A' + i); }
+
+uint32_t totalCapacity() {
+  uint32_t c = 0;
+  for (int i = 0; i < sens.count; i++) c += sens.s[i].capacityL;
+  return c;
+}
+
+void saveSettings();
+void saveSensors() {
+  sens.magic = SENS_MAGIC;
+  EEPROM.put(SENS_ADDR, sens);
+  // Keep the single-sensor settings in step, for anything still reading them
+  cfg.distEmpty = sens.s[0].emptyCm;
+  cfg.distFull = sens.s[0].fullCm;
+  cfg.capacityL = totalCapacity();
+  saveSettings();
+}
+
+void loadSensors() {
+  EEPROM.get(SENS_ADDR, sens);
+  bool ok = sens.magic == SENS_MAGIC && sens.count >= 1 && sens.count <= MAX_SENSORS && sens.ledMode <= 2;
+  for (int i = 0; ok && i < WTMS_MAX_SENSORS; i++) {
+    const SensorCfg& c = sens.s[i];
+    if (isnan(c.emptyCm) || isnan(c.fullCm) || c.emptyCm - c.fullCm < 10 || c.emptyCm > 460 || c.capacityL > 1000000) ok = false;
+  }
+  if (!ok) {                                  // first start with 3.0.0: one sensor, taken from the old settings
+    memset(&sens, 0, sizeof(sens));
+    sens.count = 1;
+    sens.ledMode = 1;
+    for (int i = 0; i < WTMS_MAX_SENSORS; i++) {
+      defaultSensorName(i, sens.s[i].name);
+      sens.s[i].emptyCm = 120.0; sens.s[i].fullCm = 25.0;
+    }
+    sens.s[0].emptyCm = cfg.distEmpty;
+    sens.s[0].fullCm = cfg.distFull;
+    sens.s[0].capacityL = cfg.capacityL;
+    sens.s[0].depthMm = prof.depthMm;
+    saveSensors();
+  }
+  for (int i = 0; i < WTMS_MAX_SENSORS; i++) sens.s[i].name[16] = 0;
+}
+
 void saveIdentity() { ident.magic = ID_MAGIC; EEPROM.put(ID_ADDR, ident); EEPROM.commit(); }
 
 // Keep printable characters only, trimmed, max `size-1` bytes
@@ -259,12 +334,18 @@ Adafruit_NeoPixel strip(DEFAULT_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);  // length
 WebServerT server(80);
 DNSServer  dns;
 
-// Sensor state
-float samples[MEDIAN_N];
-int   sampleCount = 0, sampleIdx = 0, failStreak = 0;
-float currentDistance = -1;
-bool  sensorOK = false;
-float smoothedLevel = -1;
+// Sensor state, one per sensor
+struct SensorRt {
+  float samples[MEDIAN_N];
+  int   count = 0, idx = 0, fails = 0, lastN = MEDIAN_N;
+  float dist = -1;            // median distance (cm), -1 = no reading
+  bool  ok = false;
+  float smooth = -1;          // smoothed level 0..1 for the LEDs and the dashboard
+  bool  lastOk = true;
+  unsigned long lastLog = 0;
+  int   hidden = 0;
+};
+SensorRt srt[WTMS_MAX_SENSORS];
 bool  blinkState = false;
 
 // Wi-Fi state
@@ -285,7 +366,6 @@ unsigned long loopMax = 0, lastLoopAt = 0;
 uint8_t lastChannel = 0;
 uint16_t lastStaReason = 0;
 unsigned long lastStaReasonAt = 0;
-bool lastSensorOK = true;
 
 // Wi-Fi driver events arrive from another context: queue them, log them from loop()
 enum { EV_AP_JOIN = 1, EV_AP_LEAVE, EV_STA_DISC };
@@ -359,7 +439,7 @@ void saveCreds()    { EEPROM.put(WIFI_ADDR, creds); EEPROM.commit(); }
 bool haveCreds()    { return creds.magic == WIFI_MAGIC && creds.ssid[0] != 0; }
 
 void loadStorage() {
-  EEPROM.begin(512);
+  EEPROM.begin(EEPROM_BYTES);
   EEPROM.get(0, cfg);
   if (cfg.magic != SETTINGS_MAGIC || isnan(cfg.distEmpty) || isnan(cfg.distFull) ||
       isnan(cfg.lowAlarm) || cfg.distEmpty - cfg.distFull < 10) {
@@ -408,21 +488,32 @@ void loadStorage() {
   if (prof.magic != PROF_MAGIC || prof.usage > 1 || prof.location > 3 || prof.shape > 1) {
     memset(&prof, 0, sizeof(prof));
   }
+  loadSensors();
   deriveNames(apName, hostName);
 }
 
 // ================= Ultrasonic (non-blocking) =================
-float readDistanceOnce() {
-  digitalWrite(TRIG_PIN, LOW);
+float readDistanceOnce(int i) {
+  const uint8_t trig = TRIG_PINS[i], echo = ECHO_PINS[i];
+  digitalWrite(trig, LOW);
   delayMicroseconds(5);
-  digitalWrite(TRIG_PIN, HIGH);
+  digitalWrite(trig, HIGH);
   delayMicroseconds(cfg.trigUs);         // AJ-SR04M ignores 10-20 us triggers
-  digitalWrite(TRIG_PIN, LOW);
-  unsigned long us = pulseIn(ECHO_PIN, HIGH, ECHO_TIMEOUT_US);
+  digitalWrite(trig, LOW);
+  unsigned long us = pulseIn(echo, HIGH, ECHO_TIMEOUT_US);
   if (us == 0) return -1;
   float cm = us * 0.0343 / 2.0;
   return cm > MAX_VALID_CM ? -1 : cm;
 }
+
+void initSensorPins(int i) {
+  pinMode(TRIG_PINS[i], OUTPUT);
+  digitalWrite(TRIG_PINS[i], LOW);
+  pinMode(ECHO_PINS[i], INPUT);
+}
+
+// "<name>: " in front of log lines when there is more than one sensor
+String sensorWho(int i) { return sens.count > 1 ? String(sens.s[i].name) + ": " : String(""); }
 
 unsigned long liveUntil = 0;            // live mode while an admin has the Setup tab open
 uint16_t sensorIntervalMs() {
@@ -433,58 +524,99 @@ uint8_t refreshSeconds() { return cfg.rateProfile < 3 ? RATE_PRESETS[cfg.ratePro
 int medianSize()  { return sensorIntervalMs() >= 2000 ? 5 : 7; }              // shorter window when readings are slow
 int failLimit()   { return constrain(15000 / (int)sensorIntervalMs(), 3, 10); } // about 15 s of misses, 3..10 readings
 
-float medianOfSamples() {
+// (plain parameters: the Arduino IDE declares every function before the structs are defined)
+float medianOf(const float* samples, int count) {
   float v[MEDIAN_N];
-  for (int i = 0; i < sampleCount; i++) v[i] = samples[i];
-  for (int i = 1; i < sampleCount; i++) {
+  for (int i = 0; i < count; i++) v[i] = samples[i];
+  for (int i = 1; i < count; i++) {
     float k = v[i];
     int j = i - 1;
     while (j >= 0 && v[j] > k) { v[j + 1] = v[j]; j--; }
     v[j + 1] = k;
   }
-  return v[sampleCount / 2];
+  return v[count / 2];
 }
 
+void readSensor(int i) {
+  SensorRt& r = srt[i];
+  int n = medianSize();
+  if (n != r.lastN) { r.lastN = n; r.idx = 0; if (r.count > n) r.count = n; }
+
+  float d = readDistanceOnce(i);
+  if (d > 0) {
+    r.samples[r.idx] = d;
+    r.idx = (r.idx + 1) % n;
+    if (r.count < n) r.count++;
+    r.fails = 0;
+  } else if (r.fails < 1000) {
+    r.fails++;
+  }
+  if (r.fails >= failLimit()) {
+    r.ok = false; r.count = 0; r.idx = 0; r.dist = -1; r.smooth = -1;
+  } else if (r.count >= 3) {
+    r.dist = medianOf(r.samples, r.count);
+    r.ok = true;
+  }
+  // Log fault / recovery, at most once per 30 s per sensor so a loose wire can't flood the log
+  if (r.ok != r.lastOk) {
+    r.lastOk = r.ok;
+    if (millis() - r.lastLog < 30000 && r.lastLog) { r.hidden++; return; }
+    r.lastLog = millis();
+    String extra = r.hidden ? " (" + String(r.hidden) + " changes in between not logged)" : String("");
+    r.hidden = 0;
+    if (r.ok) logWrite('I', "sensor", sensorWho(i) + "Sensor OK: " + String(r.dist, 1) + " cm" + extra);
+    else      logWrite('W', "sensor", sensorWho(i) + "Sensor fault: no echo (TRIG " + TRIG_NAMES[i] + ", ECHO " + ECHO_NAMES[i] + ")" + extra);
+  }
+}
+
+// Sensors are read one at a time, at least 70 ms apart, so one sensor never hears another's echo
+const unsigned long PING_GAP_MS = 70;
 void sensorTask() {
   static unsigned long last = 0;
-  if (millis() - last < sensorIntervalMs()) return;
+  static uint8_t next = 0;
+  const uint8_t n = sens.count;
+  unsigned long gap = sensorIntervalMs() / n;
+  if (gap < PING_GAP_MS) gap = PING_GAP_MS;
+  if (millis() - last < gap) return;
   last = millis();
-  static int lastN = MEDIAN_N;
-  int n = medianSize();
-  if (n != lastN) { lastN = n; sampleIdx = 0; if (sampleCount > n) sampleCount = n; }
+  if (next >= n) next = 0;
+  readSensor(next);
+  next = (next + 1) % n;
+}
 
-  float d = readDistanceOnce();
-  if (d > 0) {
-    samples[sampleIdx] = d;
-    sampleIdx = (sampleIdx + 1) % n;
-    if (sampleCount < n) sampleCount++;
-    failStreak = 0;
-  } else if (failStreak < 1000) {
-    failStreak++;
-  }
-  if (failStreak >= failLimit()) {
-    sensorOK = false; sampleCount = 0; sampleIdx = 0; currentDistance = -1;
-  } else if (sampleCount >= 3) {
-    currentDistance = medianOfSamples();
-    sensorOK = true;
-  }
-  // Log sensor fault / recovery, at most once per 30 s so a loose wire can't flood the log
-  static unsigned long lastSensorLog = 0;
-  static int hidden = 0;
-  if (sensorOK != lastSensorOK) {
-    lastSensorOK = sensorOK;
-    if (millis() - lastSensorLog < 30000 && lastSensorLog) { hidden++; return; }
-    lastSensorLog = millis();
-    String extra = hidden ? " (" + String(hidden) + " changes in between not logged)" : String("");
-    hidden = 0;
-    if (sensorOK) logWrite('I', "sensor", "Sensor OK: " + String(currentDistance, 1) + " cm" + extra);
-    else          logWrite('W', "sensor", "Sensor fault: no echo" + extra);
+float levelOf(int i, float d) {
+  const SensorCfg& c = sens.s[i];
+  float level = (c.emptyCm - d) / (c.emptyCm - c.fullCm);
+  return constrain(level, 0.0f, 1.0f);
+}
+
+void updateLevels() {
+  for (int i = 0; i < sens.count; i++) {
+    SensorRt& r = srt[i];
+    if (!r.ok) continue;
+    float l = levelOf(i, r.dist);
+    r.smooth = r.smooth < 0 ? l : r.smooth + (l - r.smooth) * 0.25f;
   }
 }
 
-float levelFromDistance(float d) {
-  float level = (cfg.distEmpty - d) / (cfg.distEmpty - cfg.distFull);
-  return constrain(level, 0.0f, 1.0f);
+bool allSensorsOk() {
+  for (int i = 0; i < sens.count; i++) if (!srt[i].ok || srt[i].smooth < 0) return false;
+  return true;
+}
+
+// Whole tank: litres-weighted when every compartment has a capacity, otherwise the average. -1 = no reading.
+float totalLevel() {
+  bool allCap = true;
+  double litres = 0, sum = 0, cap = 0;
+  int k = 0;
+  for (int i = 0; i < sens.count; i++) {
+    if (!sens.s[i].capacityL) allCap = false;
+    if (!srt[i].ok || srt[i].smooth < 0) continue;
+    sum += srt[i].smooth; k++;
+    litres += sens.s[i].capacityL * srt[i].smooth; cap += sens.s[i].capacityL;
+  }
+  if (!k) return -1;
+  return (allCap && cap > 0) ? (float)(litres / cap) : (float)(sum / k);
 }
 
 // ================= LEDs =================
@@ -504,17 +636,22 @@ void setLed(int posFromBottom, uint32_t c) {
   strip.setPixelColor(idx, c);
 }
 
-void drawLevel(float level) {
-  float litF = level * cfg.numLeds;
+// A level bar on LEDs [start, start+len), counted from the bottom. fault: bottom LED blinks blue.
+void drawBar(int start, int len, float level, bool fault) {
+  if (len <= 0) return;
+  if (fault) { setLed(start, blinkState ? strip.Color(0, 0, 255) : 0); return; }
+  float litF = level * len;
   int fullLeds = (int)litF;
   float partial = litF - fullLeds;
-  for (int i = 0; i < cfg.numLeds; i++) {
-    float t = cfg.colorByLevel ? level : posT(i);
-    if (i < fullLeds)                          setLed(i, redToGreen(t));
-    else if (i == fullLeds && partial > 0.05)  setLed(i, redToGreen(t, partial));
+  for (int i = 0; i < len; i++) {
+    float t = cfg.colorByLevel ? level : (len > 1 ? (float)i / (len - 1) : 1.0f);
+    if (i < fullLeds)                          setLed(start + i, redToGreen(t));
+    else if (i == fullLeds && partial > 0.05)  setLed(start + i, redToGreen(t, partial));
   }
-  if (level < cfg.lowAlarm)
-    for (int i = 0; i < 3 && i < cfg.numLeds; i++) setLed(i, blinkState ? strip.Color(255, 0, 0) : 0);
+  if (level < cfg.lowAlarm) {
+    int k = len >= 9 ? 3 : (len >= 3 ? 1 : 0);
+    for (int i = 0; i < k; i++) setLed(start + i, blinkState ? strip.Color(255, 0, 0) : 0);
+  }
 }
 
 bool ledsForce = true;                  // redraw even if nothing changed (after settings changes)
@@ -526,12 +663,24 @@ void displayTask() {
   blinkState = (millis() / 500) % 2;
 
   strip.clear();
-  if (sensorOK) {
-    float level = levelFromDistance(currentDistance);
-    smoothedLevel = smoothedLevel < 0 ? level : smoothedLevel + (level - smoothedLevel) * 0.25;
-    drawLevel(smoothedLevel);
+  updateLevels();
+  const int ns = sens.count;
+  const int gap = sens.ledMode == 1 ? 1 : 0;              // dark LED between compartments on a single strip
+  const int seg = ns > 1 ? (cfg.numLeds - gap * (ns - 1)) / ns : 0;
+  if (ns == 1 || sens.ledMode == 0 || seg < 2) {
+    float t = totalLevel();
+    if (t < 0) drawBar(0, cfg.numLeds, 0, true);           // no reading at all
+    else {
+      drawBar(0, cfg.numLeds, t, false);
+      if (!allSensorsOk()) setLed(0, blinkState ? strip.Color(0, 0, 255) : 0);   // a sensor has a fault
+    }
   } else {
-    setLed(0, blinkState ? strip.Color(0, 0, 255) : 0);        // sensor fault
+    for (int i = 0; i < ns; i++) {                          // one bar per compartment, sensor 1 at the bottom
+      int start = i * (seg + gap);
+      int len = (i == ns - 1) ? cfg.numLeds - start : seg;
+      bool fault = !srt[i].ok || srt[i].smooth < 0;
+      drawBar(start, len, fault ? 0 : srt[i].smooth, fault);
+    }
   }
   if (apActive && !blinkState) setLed(cfg.numLeds - 1, strip.Color(0, 0, 160));  // hotspot on
   // Only send data to the strip when a pixel actually changed
@@ -880,13 +1029,51 @@ void handleStatus() {
   bool conn = net == NET_CONNECTED;
   unsigned long now = millis();
   String j;
-  j.reserve(1200);
+  j.reserve(2200);
   j += "{\"fw\":\"" FW_VERSION "\",\"board\":\"" BOARD_NAME "\"";
-  j += ",\"valid\":";        j += sensorOK ? "true" : "false";
-  j += ",\"distance\":";     j += String(sensorOK ? currentDistance : 0, 1);
-  j += ",\"level\":";        j += String(smoothedLevel < 0 ? 0 : smoothedLevel * 100, 1);
-  j += ",\"empty\":";        j += String(cfg.distEmpty, 1);
-  j += ",\"full\":";         j += String(cfg.distFull, 1);
+  // Top-level values describe the whole tank (sensor 1 for distances), so older apps keep working
+  const float tl = totalLevel();
+  int fi = 0;                                             // the compartment reported in the fill fields
+  for (int i = 0; i < sens.count; i++) if (fd[i].filling) { fi = i; break; }
+  j += ",\"valid\":";        j += allSensorsOk() ? "true" : "false";
+  j += ",\"distance\":";     j += String(srt[0].ok ? srt[0].dist : 0, 1);
+  j += ",\"level\":";        j += String(tl < 0 ? 0 : tl * 100, 1);
+  j += ",\"empty\":";        j += String(sens.s[0].emptyCm, 1);
+  j += ",\"full\":";         j += String(sens.s[0].fullCm, 1);
+  j += ",\"maxSensors\":";   j += String(MAX_SENSORS);
+  j += ",\"ledMode\":";      j += String(sens.ledMode);
+  j += ",\"pins\":[";                                   // wiring for every possible sensor, for the set-up page
+  for (int i = 0; i < MAX_SENSORS; i++) {
+    if (i) j += ",";
+    j += "{\"trig\":\""; j += TRIG_NAMES[i]; j += "\",\"echo\":\""; j += ECHO_NAMES[i]; j += "\"}";
+  }
+  j += "]";
+  j += ",\"sensors\":[";
+  for (int i = 0; i < sens.count; i++) {
+    const SensorCfg& c = sens.s[i];
+    const SensorRt& r = srt[i];
+    if (i) j += ",";
+    j += "{\"name\":\"";      j += jsonEscape(c.name);
+    j += "\",\"valid\":";     j += (r.ok && r.smooth >= 0) ? "true" : "false";
+    j += ",\"distance\":";     j += String(r.ok ? r.dist : 0, 1);
+    j += ",\"level\":";        j += String(r.smooth < 0 ? 0 : r.smooth * 100, 1);
+    j += ",\"empty\":";        j += String(c.emptyCm, 1);
+    j += ",\"full\":";         j += String(c.fullCm, 1);
+    j += ",\"capacity\":";     j += String(c.capacityL);
+    j += ",\"depth\":";        j += String(c.depthMm);
+    j += ",\"filling\":";      j += fd[i].filling ? "true" : "false";
+    j += ",\"fillRate\":";     j += String(fd[i].filling ? fd[i].rateMmMin / 10.0 : 0.0, 2);
+    j += ",\"fillEta\":";      j += String(fillEtaMin(i, r.ok ? r.dist : -1, c.fullCm), 0);
+    j += ",\"trig\":\"";      j += TRIG_NAMES[i];
+    j += "\",\"echo\":\"";   j += ECHO_NAMES[i];
+    j += "\"}";
+  }
+  j += "]";
+  j += ",\"total\":{\"level\":"; j += String(tl < 0 ? 0 : tl * 100, 1);
+  j += ",\"valid\":";        j += tl < 0 ? "false" : "true";
+  j += ",\"capacity\":";     j += String(totalCapacity());
+  j += ",\"litres\":";       j += String(tl < 0 || !totalCapacity() ? 0 : (long)(tl * totalCapacity() + 0.5));
+  j += "}";
   j += ",\"lowAlarm\":";     j += String((int)round(cfg.lowAlarm * 100));
   j += ",\"trigUs\":";       j += String(cfg.trigUs);
   j += ",\"brightness\":";   j += String(cfg.brightness);
@@ -922,11 +1109,11 @@ void handleStatus() {
   j += ",\"auth\":{\"admin\":"; j += admin ? "true" : "false";
   j += ",\"mustChange\":";   j += admin && auth.mustChange ? "true" : "false";
   j += "}";
-  j += ",\"filling\":";      j += fd.filling ? "true" : "false";
-  j += ",\"fillRate\":";     j += String(fd.filling ? fd.rateMmMin / 10.0 : 0.0, 2);
-  j += ",\"fillStart\":";    j += String(fd.filling ? fd.startT : 0);
-  j += ",\"fillEta\":";      j += String(fillEtaMin(sensorOK ? currentDistance : -1, cfg.distFull), 0);
-  j += ",\"capacity\":";     j += String(cfg.capacityL);
+  j += ",\"filling\":";      j += anyFilling(sens.count) ? "true" : "false";
+  j += ",\"fillRate\":";     j += String(fd[fi].filling ? fd[fi].rateMmMin / 10.0 : 0.0, 2);
+  j += ",\"fillStart\":";    j += String(fd[fi].filling ? fd[fi].startT : 0);
+  j += ",\"fillEta\":";      j += String(fillEtaMin(fi, srt[fi].ok ? srt[fi].dist : -1, sens.s[fi].fullCm), 0);
+  j += ",\"capacity\":";     j += String(totalCapacity());
   j += ",\"nightStart\":";   j += String(cfg.nightStart);
   j += ",\"nightEnd\":";     j += String(cfg.nightEnd);
   j += ",\"leakCm\":";       j += String(cfg.leakMm / 10.0, 1);
@@ -966,11 +1153,13 @@ void handleStatus() {
 
 void handleCalibrate() {
   if (!needAdmin()) return;
-  float e = cfg.distEmpty, f = cfg.distFull;
+  const int si = server.hasArg("sensor") ? constrain((int)server.arg("sensor").toInt(), 0, sens.count - 1) : 0;
+  SensorCfg& c = sens.s[si];
+  float e = c.emptyCm, f = c.fullCm;
   String point = server.arg("point");
   if (point == "empty" || point == "full") {
-    if (!sensorOK) return sendResult(false, "No valid sensor reading right now");
-    if (point == "empty") e = currentDistance; else f = currentDistance;
+    if (!srt[si].ok) return sendResult(false, "No valid reading from this sensor right now");
+    if (point == "empty") e = srt[si].dist; else f = srt[si].dist;
   } else {
     if (server.hasArg("empty")) e = server.arg("empty").toFloat();
     if (server.hasArg("full"))  f = server.arg("full").toFloat();
@@ -978,11 +1167,11 @@ void handleCalibrate() {
   if (f < 15)           return sendResult(false, "Full distance must be at least 15 cm (sensor blind zone)");
   if (e > MAX_VALID_CM) return sendResult(false, "Empty distance must be 450 cm or less");
   if (e - f < 10)       return sendResult(false, "Empty distance must be at least 10 cm more than Full");
-  cfg.distEmpty = e;
-  cfg.distFull = f;
-  saveSettings();
-  logWrite('I', "cfg", "Calibration saved: empty " + String(e, 1) + " cm, full " + String(f, 1) + " cm");
-  smoothedLevel = -1;
+  c.emptyCm = e;
+  c.fullCm = f;
+  saveSensors();
+  logWrite('I', "cfg", sensorWho(si) + "Calibration saved: empty " + String(e, 1) + " cm, full " + String(f, 1) + " cm");
+  srt[si].smooth = -1;
   sendResult(true, "Calibration saved: empty " + String(e, 1) + " cm, full " + String(f, 1) + " cm");
 }
 
@@ -1005,7 +1194,7 @@ void handleSettings() {
     cfg.capacityL = oldCap;             // tank size is hardware too
   } else {
     if (server.hasArg("leds"))         cfg.numLeds      = constrain(server.arg("leds").toInt(), 1, MAX_LEDS);
-    if (server.hasArg("capacity"))   cfg.capacityL  = constrain(server.arg("capacity").toInt(), 0, 1000000);
+    if (server.hasArg("capacity") && sens.count == 1) sens.s[0].capacityL = constrain(server.arg("capacity").toInt(), 0, 1000000);
     if (server.hasArg("nightStart")) cfg.nightStart = constrain(server.arg("nightStart").toInt(), 0, 23);
     if (server.hasArg("nightEnd"))   cfg.nightEnd   = constrain(server.arg("nightEnd").toInt(), 0, 23);
     if (cfg.nightStart == cfg.nightEnd) cfg.nightEnd = (cfg.nightStart + 4) % 24;
@@ -1045,6 +1234,9 @@ void handleSettings() {
     strip.updateLength(cfg.numLeds);
   }
   strip.setBrightness(cfg.brightness);
+  cfg.distEmpty = sens.s[0].emptyCm;                  // calibration and capacity live with each sensor now
+  cfg.distFull = sens.s[0].fullCm;
+  cfg.capacityL = totalCapacity();
   saveSettings();
   applyPower();
   sendResult(true, defaults ? "Settings reset to defaults" : "Settings saved");
@@ -1153,6 +1345,7 @@ void handleProfile() {
   prof.heightMm = num("hgt", 0, 20000, prof.heightMm);
   prof.diaMm    = num("dia", 0, 20000, prof.diaMm);
   prof.depthMm  = num("depth", 0, 20000, prof.depthMm);
+  if (server.hasArg("depth") && sens.count == 1) { sens.s[0].depthMm = prof.depthMm; saveSensors(); }
   prof.gapMm    = num("gap", 0, 5000, prof.gapMm);
   saveProfile();
   static const char* const U[] = {"Domestic", "Commercial"};
@@ -1162,6 +1355,39 @@ void handleProfile() {
                         "x" + String(prof.heightMm) + " mm, water depth " + String(prof.depthMm) + " mm");
   sendResult(true, "Tank profile saved");
 }
+// Number of sensors, LED layout, and each compartment's name, capacity and water depth
+void handleSensors() {
+  if (!needAdmin()) return;
+  const int count = server.hasArg("count") ? constrain((int)server.arg("count").toInt(), 1, (int)MAX_SENSORS) : sens.count;
+  if (server.hasArg("ledMode")) sens.ledMode = constrain((int)server.arg("ledMode").toInt(), 0, 2);
+  for (int i = 0; i < MAX_SENSORS; i++) {
+    String k(i);
+    if (server.hasArg("name" + k)) {
+      String v = server.arg("name" + k); v.trim();
+      if (v.length()) { strncpy(sens.s[i].name, v.c_str(), 16); sens.s[i].name[16] = 0; }
+      else defaultSensorName(i, sens.s[i].name);
+    }
+    if (server.hasArg("cap" + k))   sens.s[i].capacityL = constrain(server.arg("cap" + k).toInt(), 0, 1000000);
+    if (server.hasArg("depth" + k)) sens.s[i].depthMm = constrain(server.arg("depth" + k).toInt(), 0, 20000);
+  }
+  const bool countChanged = count != sens.count;
+  if (countChanged) {
+    for (int i = sens.count; i < count; i++) { initSensorPins(i); srt[i] = SensorRt(); }
+    for (int i = count; i < sens.count; i++) srt[i] = SensorRt();
+    sens.count = count;
+    histSensors = count;
+    historyClear();
+    fillReset();
+    logWrite('I', "cfg", "Sensors in use: " + String(count) + ". History cleared (its records change size).");
+  }
+  saveSensors();
+  String names;
+  for (int i = 0; i < sens.count; i++) { if (i) names += ", "; names += sens.s[i].name; }
+  logWrite('I', "cfg", "Sensor settings saved: " + names + ", LED layout " + String(sens.ledMode));
+  ledsForce = true;
+  sendResult(true, countChanged ? "Saved. The history was cleared because the number of sensors changed." : "Sensor settings saved");
+}
+
 void handleHistoryClear() {
   if (!needAdmin()) return;
   historyClear();
@@ -1307,12 +1533,12 @@ void setup() {
   logWrite(supplyMv() < 3000 ? 'W' : 'I', "boot", "Supply voltage " + String(supplyMv() / 1000.0, 2) + " V");
 #endif
   if (!logFsOK) logWrite('W', "sys", "Flash log unavailable: log kept in memory only. Check Tools > Partition Scheme (ESP32) or Flash Size with FS (ESP8266).");
+  historyMigrate();
   if (logFsFormatted) logWrite('I', "sys", "Flash storage was blank and has been formatted (normal after the first upload or 'Erase All Flash').");
   if (bootCount == 1) logWrite('I', "sys", "First start: settings are at their defaults. Keep Tools > 'Erase All Flash Before Sketch Upload' Disabled to keep them across uploads.");
 
-  pinMode(TRIG_PIN, OUTPUT);
-  pinMode(ECHO_PIN, INPUT);
-  digitalWrite(TRIG_PIN, LOW);
+  for (int i = 0; i < sens.count; i++) initSensorPins(i);
+  histSensors = sens.count;
 
   strip.begin();
   strip.setBrightness(cfg.brightness);
@@ -1377,6 +1603,7 @@ void setup() {
   server.on("/api/history/clear", HTTP_POST, handleHistoryClear);
   server.on("/api/site",          HTTP_POST, handleSite);
   server.on("/api/profile",       HTTP_POST, handleProfile);
+  server.on("/api/sensors",       HTTP_POST, handleSensors);
   server.on("/api/auth",          HTTP_GET,  handleAuth);
   server.on("/api/login",         HTTP_POST, handleLogin);
   server.on("/api/logout",        HTTP_POST, handleLogout);
@@ -1396,16 +1623,23 @@ void loop() {
   if (mdnsStarted) MDNS.update();
 #endif
   sensorTask();
-  fillTask(sensorOK ? currentDistance : -1, cfg.fillMmMin, cfg.distFull);
-  historyTask(sensorOK ? currentDistance : -1);
+  float dist[WTMS_MAX_SENSORS];
+  for (int i = 0; i < sens.count; i++) {
+    dist[i] = srt[i].ok ? srt[i].dist : -1;
+    fillTask(i, dist[i], cfg.fillMmMin, sens.s[i].fullCm);
+  }
+  historyTask(dist);
   displayTask();
   buttonTask();
 
   static unsigned long lastLog = 0;                   // live values on Serial in performance mode only
   if (cfg.perfMode && millis() - lastLog > 1000) {
     lastLog = millis();
-    if (sensorOK) Serial.printf("Distance: %.1f cm  Level: %.0f%%\n", currentDistance, smoothedLevel * 100);
-    else          Serial.println("Sensor: no echo");
+    for (int i = 0; i < sens.count; i++) {
+      if (srt[i].ok) Serial.printf("%s: %.1f cm  %.0f%%   ", sens.s[i].name, srt[i].dist, srt[i].smooth * 100);
+      else           Serial.printf("%s: no echo   ", sens.s[i].name);
+    }
+    Serial.println();
   }
 
   if (restartAt && millis() > restartAt) ESP.restart();

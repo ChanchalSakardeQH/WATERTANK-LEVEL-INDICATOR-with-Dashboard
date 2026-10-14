@@ -6,8 +6,19 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+import java.util.Properties
+
 // Release signing comes from environment variables set by tools/build-android.ps1 (never stored in the project)
 val keystoreFile: String? = System.getenv("ANDROID_KEYSTORE_FILE")
+
+// Version: android/version.properties (the build menu updates it); -PappVersionName / -PappVersionCode override
+val versionProps = Properties().apply {
+    val f = rootProject.file("version.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+val appVersionName: String = (project.findProperty("appVersionName") as String?) ?: versionProps.getProperty("versionName", "1.2.0")
+val appVersionCode: Int = (project.findProperty("appVersionCode") as String?)?.toIntOrNull()
+    ?: versionProps.getProperty("versionCode", "3").toInt()
 
 android {
     namespace = "com.woodyouloveit.wtms"
@@ -17,9 +28,9 @@ android {
         applicationId = "com.woodyouloveit.wtms"
         minSdk = 26
         targetSdk = 35
-        // Override from the build script: -PversionName=1.1.0 -PversionCode=2
-        versionName = (project.findProperty("versionName") as String?) ?: "1.1.0"
-        versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 2
+        versionName = appVersionName
+        versionCode = appVersionCode
+        manifestPlaceholders["appLabel"] = "Water Tanks Monitor"
     }
 
     signingConfigs {
@@ -41,7 +52,10 @@ android {
             if (keystoreFile != null) signingConfig = signingConfigs.getByName("release")
         }
         debug {
-            // Same app ID as release, so the build script can install and launch either
+            // Installs beside the release app as "WTMS Debug" (the build script launches com.woodyouloveit.wtms.debug)
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            manifestPlaceholders["appLabel"] = "WTMS Debug"
         }
     }
 

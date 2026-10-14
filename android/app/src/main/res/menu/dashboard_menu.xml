@@ -2,5 +2,6 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item android:id="@+id/action_reload" android:icon="@drawable/ic_refresh" android:title="@string/reload" app:showAsAction="ifRoom" />
+    <item android:id="@+id/action_admin" android:title="@string/admin_login" app:showAsAction="never" />
     <item android:id="@+id/action_browser" android:title="@string/open_browser" app:showAsAction="never" />
 </menu>

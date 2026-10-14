@@ -9,6 +9,7 @@ package com.woodyouloveit.wtms
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
@@ -22,6 +23,9 @@ class DeviceAdapter(
     private var items: List<Device> = emptyList()
     private val status = mutableMapOf<String, TankStatus?>()   // null = checking
     private val remote = mutableSetOf<String>()                 // devices reached through their remote address
+    private var admins: Set<String> = emptySet()                // devices with an admin session in this app
+
+    fun setAdmins(ids: Set<String>) { admins = ids; notifyDataSetChanged() }
 
     fun submit(list: List<Device>) { items = list.toList(); notifyDataSetChanged() }
     fun setStatus(id: String, s: TankStatus?, viaRemote: Boolean = false) {
@@ -38,6 +42,40 @@ class DeviceAdapter(
         val level: TextView = v.findViewById(R.id.level)
         val litres: TextView = v.findViewById(R.id.litres)
         val bar: LinearProgressIndicator = v.findViewById(R.id.bar)
+        val compBox: LinearLayout = v.findViewById(R.id.compBox)
+    }
+
+    /** One small row per compartment (name, level, bar) when the tank has several. */
+    private fun bindCompartments(h: Holder, s: TankStatus?) {
+        h.compBox.removeAllViews()
+        if (s == null || !s.reachable || !s.multi) { h.compBox.visibility = View.GONE; return }
+        h.compBox.visibility = View.VISIBLE
+        val ctx = h.itemView.context
+        val dp = ctx.resources.displayMetrics.density
+        for (c in s.compartments) {
+            val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, (4 * dp).toInt(), 0, 0) }
+            row.addView(TextView(ctx).apply {
+                text = c.name; layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            row.addView(TextView(ctx).apply {
+                text = when {
+                    !c.valid -> "no echo"
+                    c.capacity > 0 -> "${Math.round(c.level)}% · ${c.litres} L"
+                    else -> "${Math.round(c.level)}%"
+                } + if (c.filling) " · filling" else ""
+                setTextColor(ContextCompat.getColor(ctx, when {
+                    !c.valid -> R.color.bad
+                    c.level < s.lowAlarm -> R.color.warn
+                    else -> R.color.brand_teal
+                }))
+            })
+            h.compBox.addView(row)
+            h.compBox.addView(LinearProgressIndicator(ctx).apply {
+                max = 100; trackThickness = (5 * dp).toInt(); trackCornerRadius = (3 * dp).toInt()
+                setIndicatorColor(ContextCompat.getColor(ctx, if (c.valid && c.level < s.lowAlarm) R.color.warn else R.color.brand_teal_light))
+                setProgressCompat(if (c.valid) Math.round(c.level.coerceIn(0.0, 100.0)).toInt() else 0, false)
+            })
+        }
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
@@ -51,7 +89,9 @@ class DeviceAdapter(
         val ctx = h.itemView.context
         h.title.text = s?.title?.takeIf { it.isNotBlank() } ?: d.name.ifBlank { d.address }
         val where = if (d.id in remote) "remote" else d.address
-        h.subtitle.text = listOf(s?.org.orEmpty(), where).filter { it.isNotBlank() }.joinToString(" · ")
+        h.subtitle.text = listOf(s?.org.orEmpty(), where, if (d.id in admins) "admin" else "")
+            .filter { it.isNotBlank() }.joinToString(" · ")
+        bindCompartments(h, s)
         h.itemView.setOnClickListener { onClick(d) }
         h.itemView.setOnLongClickListener { onLongClick(d); true }
 
@@ -65,8 +105,9 @@ class DeviceAdapter(
                 h.state.text = "Not reachable"; h.state.setTextColor(color(R.color.bad))
                 h.level.text = "–"; h.litres.text = ""; h.bar.setProgressCompat(0, false)
             }
-            !s.valid -> {
-                h.state.text = "Sensor fault (no echo)"; h.state.setTextColor(color(R.color.bad))
+            !s.valid && !(s.multi && s.totalValid) -> {
+                h.state.text = if (s.multi) "Sensor fault: " + s.faultNames.joinToString(", ") else "Sensor fault (no echo)"
+                h.state.setTextColor(color(R.color.bad))
                 h.level.text = "–"; h.litres.text = ""; h.bar.setProgressCompat(0, false)
             }
             else -> {
@@ -75,9 +116,10 @@ class DeviceAdapter(
                 h.litres.text = if (s.capacity > 0) "≈ ${s.litres} of ${s.capacity} L" else ""
                 h.bar.setProgressCompat(Math.round(pct).toInt(), true)
                 val (text, c) = when {
-                    s.filling -> "Filling (motor on)" to R.color.brand_teal
-                    s.low -> "Low water" to R.color.warn
-                    else -> "OK" to R.color.ok
+                    s.faultNames.isNotEmpty() -> "Sensor fault: " + s.faultNames.joinToString(", ") to R.color.bad
+                    s.anyFilling -> "Filling (motor on)" to R.color.brand_teal
+                    s.low -> (if (s.multi) "Low water: " + s.lowNames.joinToString(", ") else "Low water") to R.color.warn
+                    else -> (if (s.multi) "OK · whole tank" else "OK") to R.color.ok
                 }
                 h.state.text = text; h.state.setTextColor(color(c))
                 h.bar.setIndicatorColor(color(if (s.low) R.color.warn else R.color.brand_teal))

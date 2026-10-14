@@ -1,24 +1,24 @@
 <#
 .SYNOPSIS
-    Build, sign, check and install the Water Tanks Monitor Android app (woodyouloveit.com) on Windows.
+    Build, sign, check and install the Water Tanks Monitor Android app on Windows.
 
 .DESCRIPTION
     One script for the whole local Android workflow:
-      - checks Java 17, the Android SDK and Gradle (finds Android Studio's own Java automatically)
-      - the dashboard itself comes from each tank device, so there is no web build step
-      - Debug:   app-debug.apk, ready to install on your own phones
+      - finds your Android folder (for example D:\Android with Android Studio, Sdk and Gradle) by itself
+      - checks Java (17 to 24), the Android SDK and Gradle; uses Android Studio's own Java when it fits
+      - Debug:   app-debug.apk, ready to install on your own phones (installs as "WTMS Debug", beside the release app)
       - Release: signed app-release.apk and app-release.aab (Google Play), signatures verified
       - copies everything to release\android\<version>\ with SHA-256 checksums and a build log
       - optionally installs on a USB-connected phone and starts the app
       - TestAab: installs the .aab on your phone the way Google Play would (bundletool)
-      - sets itself up: with your permission it installs what is missing (Android SDK, Java 17)
+      - sets itself up: with your permission it installs what is missing (Android SDK, Java 21)
         and fixes common build failures (licences, damaged downloads, stuck Gradle processes) automatically
 
+    The dashboard itself comes from each tank device, so there is nothing to build first.
     Run it without parameters for a simple menu (or double-click build-android.bat).
 
-    woodyouloveit.com | wooduloveit.com
+    woodyouloveit | woodyouloveit.com | wooduloveit.com
     Copyright (C) 2026 Chanchal Sakarde
-    SPDX-License-Identifier: GPL-3.0-or-later (see LICENSE)
 
 .PARAMETER Task
     Menu (default), Debug, Release, All (debug + release), Keystore (create the signing key),
@@ -31,13 +31,14 @@
     Start the app after installing.
 
 .PARAMETER VersionName
-    Override the version shown to users, e.g. 1.1.0.
+    Override the version shown to users, e.g. 1.3.0 (otherwise android\version.properties).
 
 .PARAMETER VersionCode
     Override the internal version number. Google Play needs a higher number for every upload.
 
 .PARAMETER Keystore
-    The release signing key (default: %USERPROFILE%\.woodyouloveit\wtms-release.jks, outside the project).
+    The release signing key (default: <Android folder>\Keys\wtms-release.jks, outside the project;
+    a key made by the earlier build script in %USERPROFILE%\.woodyouloveit is used if it is there).
 
 .PARAMETER RememberPassword
     Remember the keystore password for next time, encrypted with your Windows login (DPAPI).
@@ -60,7 +61,7 @@
     Builds the debug APK, installs it on the connected phone and starts it.
 
 .EXAMPLE
-    .\tools\build-android.ps1 -Task Release -VersionName 1.1.0 -VersionCode 2
+    .\tools\build-android.ps1 -Task Release -VersionName 1.3.0 -VersionCode 4
     Builds the signed release APK + AAB for Google Play.
 #>
 
@@ -74,7 +75,7 @@ param(
     [string]$VersionName = '',
     [int]$VersionCode = 0,
     [string]$Keystore = '',
-    [string]$KeyAlias = 'wtms',
+    [string]$KeyAlias = '',
     [switch]$RememberPassword,
     [switch]$Open,
     [switch]$Yes,
@@ -90,12 +91,38 @@ Set-StrictMode -Version 2.0
 $OnWindows   = ($env:OS -eq 'Windows_NT')
 $Repo        = Split-Path -Parent $PSScriptRoot
 $AndroidDir  = Join-Path $Repo 'android'
+$AppName     = 'Water Tanks Monitor'
 $AppId       = 'com.woodyouloveit.wtms'
+$DebugAppId  = "$AppId.debug"                 # the debug build installs as its own app, "WTMS Debug"
+$FilePrefix  = 'woodyouloveit-wtms'
 $Home_       = if ($OnWindows) { $env:USERPROFILE } else { $env:HOME }
-$ToolsDir    = Join-Path $Home_ '.woodyouloveit'
-$SecretFile  = Join-Path $ToolsDir 'wtms-signing.dat'
+
+# Your Android folder: the one holding Sdk plus Android Studio or Gradle (for example D:\Android),
+# found by walking up from this project (D:\Android\Projects\...). SM_ANDROID_ROOT overrides it.
+function Find-AndroidRoot {
+    if ($env:SM_ANDROID_ROOT -and (Test-Path $env:SM_ANDROID_ROOT)) { return $env:SM_ANDROID_ROOT }
+    $dir = Get-Item -LiteralPath $Repo
+    while ($dir) {
+        $hasSdk = Test-Path (Join-Path $dir.FullName 'Sdk')
+        if ($hasSdk -and ((Test-Path (Join-Path $dir.FullName 'Android Studio')) -or (Test-Path (Join-Path $dir.FullName 'Gradle')))) { return $dir.FullName }
+        $dir = $dir.Parent
+    }
+    if ($OnWindows -and (Test-Path 'D:\Android\Sdk')) { return 'D:\Android' }
+    return $null
+}
+$AndroidRoot = Find-AndroidRoot
+
+# Keys, Java and tools live in the Android folder, outside the project, so every new project version uses them
+$ToolsDir    = if ($AndroidRoot) { Join-Path $AndroidRoot 'Tools' } else { Join-Path $Home_ '.woodyouloveit' }
+$KeysDir     = if ($AndroidRoot) { Join-Path $AndroidRoot 'Keys' } else { Join-Path $Home_ '.woodyouloveit' }
+$JdkDir      = if ($AndroidRoot) { Join-Path $AndroidRoot 'jdk-21' } else { Join-Path $ToolsDir 'jdk-21' }
+$SecretFile  = Join-Path $KeysDir 'wtms-signing.dat'
+$LegacySigning = Join-Path $KeysDir 'wtms-keystore.properties'             # storeFile / keyAlias / storePassword, if you keep one
 $BundletoolVersion = '1.17.2'
-$GradleHome  = if ($env:GRADLE_USER_HOME) { $env:GRADLE_USER_HOME } else { Join-Path $Home_ '.gradle' }
+$GradleHome  = if ($env:GRADLE_USER_HOME) { $env:GRADLE_USER_HOME }
+               elseif ($AndroidRoot -and (Test-Path (Join-Path $AndroidRoot 'Gradle'))) { Join-Path $AndroidRoot 'Gradle' }
+               else { Join-Path $Home_ '.gradle' }
+$env:GRADLE_USER_HOME = $GradleHome
 
 # Where the automatic set-up downloads from. (The WYLI_* variables only exist to test it against local copies.)
 $SdkRepoUrl  = if ($env:WYLI_SDK_REPO) { $env:WYLI_SDK_REPO } else { 'https://dl.google.com/android/repository' }
@@ -103,13 +130,39 @@ $AdoptiumApi = if ($env:WYLI_ADOPTIUM_API) { $env:WYLI_ADOPTIUM_API } else { 'ht
 $CmdlineToolsFallback = '15859902'        # used only if Google's package list cannot be read
 # Gradle and Android versions are read from the project, so this script never drifts from it
 $WrapperProps  = [IO.Path]::Combine($AndroidDir, 'gradle', 'wrapper', 'gradle-wrapper.properties')
-$GradleVersion = if ((Test-Path $WrapperProps) -and ((Get-Content -Raw -Path $WrapperProps) -match 'gradle-([0-9.]+)-(bin|all)\.zip')) { $Matches[1] } else { '8.13' }
+$GradleVersion = if ((Test-Path $WrapperProps) -and ((Get-Content -Raw -Path $WrapperProps) -match 'gradle-([0-9.]+)-(bin|all)\.zip')) { $Matches[1] } else { '8.14.3' }
 $AppGradle     = [IO.Path]::Combine($AndroidDir, 'app', 'build.gradle.kts')
 $CompileSdk    = if ((Test-Path $AppGradle) -and ((Get-Content -Raw -Path $AppGradle) -match 'compileSdk\s*=\s*(\d+)')) { $Matches[1] } else { '35' }
 $SdkPackages   = @('platform-tools', "platforms;android-$CompileSdk", 'build-tools;35.0.0')
-$MinJava = 17                             # Gradle 8.8-8.9 run on Java 17 to 22, Gradle 8.10+ on Java 17 to 23
-$MaxJava = if ([version]$GradleVersion -ge [version]'8.10') { 23 } elseif ([version]$GradleVersion -ge [version]'8.8') { 22 } else { 21 }
-if (-not $Keystore) { $Keystore = Join-Path $ToolsDir 'wtms-release.jks' }
+$MinJava = 17                             # Gradle 8.14 runs on Java 17 to 24, 8.10-8.13 to 23 (newer Android Studio ships Java 25: too new)
+$MaxJava = if ([version]$GradleVersion -ge [version]'8.14') { 24 } elseif ([version]$GradleVersion -ge [version]'8.10') { 23 } else { 22 }
+$JdkVersion = 21                          # what the script installs when no fitting Java is found
+$GradleDistPrefix = "gradle-$GradleVersion-"
+
+# The release key: <Android folder>\Keys (the V1.1 / V1.2 build menu made it there already)
+function Read-Properties([string]$File) {
+    $h = @{}
+    if (Test-Path $File) {
+        foreach ($l in Get-Content $File) {
+            # Java properties: a backslash escapes the next character
+            if ($l -match '^\s*([^#=]+?)\s*=\s*(.*)$') { $h[$Matches[1]] = ($Matches[2].Trim() -replace '\\(.)', '$1') }
+        }
+    }
+    return $h
+}
+$Legacy = Read-Properties $LegacySigning
+if (-not $Keystore) {
+    $Keystore = Join-Path $KeysDir 'wtms-release.jks'
+    if ($Legacy['storeFile'] -and (Test-Path $Legacy['storeFile'])) { $Keystore = $Legacy['storeFile'] }
+    # A key made by the earlier build script lives in %USERPROFILE%\.woodyouloveit: keep using it (Google Play needs the same key)
+    $EarlierKey = [IO.Path]::Combine($Home_, '.woodyouloveit', 'wtms-release.jks')
+    if (-not (Test-Path $Keystore) -and (Test-Path $EarlierKey)) {
+        $Keystore = $EarlierKey
+        $EarlierSecret = [IO.Path]::Combine($Home_, '.woodyouloveit', 'wtms-signing.dat')
+        if (-not (Test-Path $SecretFile) -and (Test-Path $EarlierSecret)) { $SecretFile = $EarlierSecret }
+    }
+}
+if (-not $KeyAlias) { $KeyAlias = if ($Legacy['keyAlias']) { $Legacy['keyAlias'] } else { 'wtms' } }
 
 $Stamp   = Get-Date -Format 'yyyyMMdd-HHmmss'
 $LogDir  = [IO.Path]::Combine($Repo, 'release', 'logs')
@@ -322,15 +375,15 @@ function Get-OsArch {
 # ---------------------------------------------------------------- automatic set-up: Java
 
 function Install-Jdk {
-    $target = Join-Path $ToolsDir 'jdk-17'
-    Info 'I can download Java 17 (Eclipse Temurin by the Adoptium project, free and open source, about 190 MB)'
-    Info "into $target, used only for these builds (nothing else on the PC changes)."
-    if (-not (Confirm-Fix 'Download Java 17 now?')) { Fail 'Java 17 is needed. Install Android Studio (it includes Java), or run this again and answer y.' }
-    Test-FreeSpace $ToolsDir 1
+    $target = $JdkDir
+    Info "I can download Java $JdkVersion (Eclipse Temurin by the Adoptium project, free and open source, about 190 MB)"
+    Info "into $target, used only for these builds (Android Studio and the rest of the PC do not change)."
+    if (-not (Confirm-Fix "Download Java $JdkVersion now?")) { Fail "Java $MinJava to $MaxJava is needed. Run this again and answer y, or set JAVA_HOME to such a JDK." }
+    Test-FreeSpace (Split-Path -Parent $target) 1
     $sys = Get-OsArch
     $os = $sys.Os; $arch = if ($sys.Arm) { 'aarch64' } else { 'x64' }
-    $assets = @(Get-WebText "$AdoptiumApi/v3/assets/latest/17/hotspot?architecture=$arch&image_type=jdk&os=$os&vendor=eclipse" | ConvertFrom-Json)
-    if ($assets.Count -eq 0) { Fail 'Adoptium did not offer a Java 17 download for this PC.' }
+    $assets = @(Get-WebText "$AdoptiumApi/v3/assets/latest/$JdkVersion/hotspot?architecture=$arch&image_type=jdk&os=$os&vendor=eclipse" | ConvertFrom-Json)
+    if ($assets.Count -eq 0) { Fail "Adoptium did not offer a Java $JdkVersion download for this PC." }
     $package = $assets[0].binary.package
     $tmp = New-TempDir 'jdk'
     $file = Join-Path $tmp $package.name
@@ -339,19 +392,20 @@ function Install-Jdk {
     Expand-Download $file $unpacked
     $top = Get-ChildItem -Path $unpacked -Directory | Select-Object -First 1
     if (Test-Path $target) { Remove-Item -Recurse -Force $target }
-    New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
     Move-Item -Path $top.FullName -Destination $target
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
     # macOS packages keep Java inside Contents/Home
-    $home17 = if (Test-Path (Join-Path $target 'Contents/Home')) { Join-Path $target 'Contents/Home' } else { $target }
-    Ok "Java 17 installed: $home17"
-    return $home17
+    $javaHome = if (Test-Path (Join-Path $target 'Contents/Home')) { Join-Path $target 'Contents/Home' } else { $target }
+    Ok "Java $JdkVersion installed: $javaHome"
+    return $javaHome
 }
 
 # ---------------------------------------------------------------- automatic set-up: Android SDK
 
 function Get-DefaultSdkDir {
     if ($env:WYLI_SDK_DEFAULT) { return $env:WYLI_SDK_DEFAULT }
+    if ($AndroidRoot) { return (Join-Path $AndroidRoot 'Sdk') }
     if ($OnWindows) { return (Join-Path $env:LOCALAPPDATA 'Android\Sdk') }
     return (Join-Path $Home_ 'Android/Sdk')
 }
@@ -508,8 +562,8 @@ function Install-AndroidSdk {
     Info 'I can set it up for you now:'
     Info "  1. download Google's SDK command-line tools from dl.google.com (about 150 MB, checksum-verified)"
     Info '  2. ask you to accept Google''s Android SDK licence'
-    Info "  3. install the Android platform (API $CompileSdk), build tools and platform tools (about 400 MB)"
-    Info "  into $dir (the standard place, shared with Android Studio)."
+    Info '  3. install the Android 16 platform, build tools and platform tools (about 400 MB)'
+    Info "  into $dir (shared with Android Studio)."
     if (-not (Confirm-Fix 'Set up the Android SDK now?')) {
         Fail 'The Android SDK is needed to build the app. Install Android Studio, or run this again and answer y.'
     }
@@ -553,8 +607,8 @@ function Get-GradleDiagnosis([string[]]$Output) {
     }
     if ($text -match 'requires Java (\d+) to run|Unsupported class file major version|Unsupported Java|incompatible with the Java version|JAVA_HOME is set to an invalid directory') {
         return @{ Key = 'java'; Problem = "This build needs Java $MinJava to $MaxJava, and the Java in use doesn't fit."
-            Question = 'Download Java 17 for these builds, then build again?'; Fix = { Use-Java (Install-Jdk) }
-            Advice = 'Install Java 17 (or Android Studio, which includes it).' }
+            Question = "Download Java $JdkVersion for these builds, then build again?"; Fix = { Use-Java (Install-Jdk) }
+            Advice = "Install Java $JdkVersion and set JAVA_HOME to it (Android Studio's own Java 25 is too new for this project)." }
     }
     if ($text -match 'Could not install Gradle distribution|zip END header not found|java\.util\.zip\.ZipException|error in opening zip file|Could not unzip') {
         return @{ Key = 'dist'; Problem = "Gradle's own download (from an earlier run) is incomplete or damaged."
@@ -573,11 +627,11 @@ function Get-GradleDiagnosis([string[]]$Output) {
     }
     if ($text -match 'not enough space on the disk|No space left on device') {
         return @{ Key = 'disk'; Problem = 'The disk is full.'; Fix = $null
-            Advice = "Free a few GB on the drive with $Repo (and on C: for the Gradle cache), then build again." }
+            Advice = "Free a few GB on the drive with $Repo (and on the drive with $GradleHome), then build again." }
     }
     if ($text -match 'Filename too long|path too long|filename or extension is too long') {
         return @{ Key = 'path'; Problem = 'Windows cannot handle file paths this long.'; Fix = $null
-            Advice = "Move the project to a short folder such as C:\WTMS (it is now in $Repo) and build again." }
+            Advice = "Move the project to a short folder such as D:\Android\Projects\WTMS (it is now in $Repo) and build again." }
     }
     if ($text -match 'PKIX path building failed|unable to find valid certification path|SSLHandshakeException') {
         return @{ Key = 'ssl'; Problem = 'A secure download was blocked: a proxy or antivirus is inspecting HTTPS traffic.'; Fix = $null
@@ -597,7 +651,7 @@ function Get-GradleDiagnosis([string[]]$Output) {
 
 function Remove-GradleDistribution {
     $dists = [IO.Path]::Combine($GradleHome, 'wrapper', 'dists')
-    Get-ChildItem -Path $dists -Directory -Filter "gradle-$GradleVersion-*" -ErrorAction SilentlyContinue | ForEach-Object { Remove-Item -Recurse -Force $_.FullName }
+    Get-ChildItem -Path $dists -Directory -Filter "$GradleDistPrefix*" -ErrorAction SilentlyContinue | ForEach-Object { Remove-Item -Recurse -Force $_.FullName }
     Ok 'Removed the damaged Gradle download'
 }
 
@@ -639,8 +693,12 @@ function Find-Java {
     $exe = if ($OnWindows) { 'java.exe' } else { 'java' }
     $candidates = @()
     if ($env:JAVA_HOME) { $candidates += $env:JAVA_HOME }
-    $candidates += (Join-Path $ToolsDir 'jdk-17')                                  # downloaded by this script
-    $candidates += [IO.Path]::Combine($ToolsDir, 'jdk-17', 'Contents', 'Home')
+    $candidates += $JdkDir                                                         # downloaded by this script
+    $candidates += [IO.Path]::Combine($JdkDir, 'Contents', 'Home')
+    if ($AndroidRoot) {
+        $candidates += (Join-Path $AndroidRoot 'jdk-17')
+        $candidates += (Join-Path $AndroidRoot 'Android Studio\jbr')               # Android Studio's own Java (fits only up to Java 24)
+    }
     if ($OnWindows) {
         # Android Studio ships its own Java 17+ (JetBrains Runtime)
         $candidates += (Join-Path $env:ProgramFiles 'Android\Android Studio\jbr')
@@ -675,7 +733,9 @@ function Write-LocalProperties {
 }
 
 function Find-Sdk {
-    $candidates = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT)
+    $candidates = @()
+    if ($AndroidRoot) { $candidates += (Join-Path $AndroidRoot 'Sdk') }
+    $candidates += @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT)
     if ($OnWindows -and $env:LOCALAPPDATA) { $candidates += (Join-Path $env:LOCALAPPDATA 'Android\Sdk') }
     if (-not $OnWindows) { $candidates += (Join-Path $Home_ 'Android/Sdk'); $candidates += (Join-Path $Home_ 'Library/Android/sdk') }
     foreach ($c in $candidates) {
@@ -696,14 +756,16 @@ function Find-Latest([string]$Dir, [string]$File) {
 
 function Initialize-Tools([switch]$NeedSdk, [switch]$NeedAdb) {
     Step 'Checking the set-up'
+    if ($AndroidRoot) { Ok "Android folder: $AndroidRoot" }
+    Ok "Gradle folder: $GradleHome"
 
-    # Java 17 to 23
+    # Java 17 to 24
     $script:JavaTooNew = 0
     $javaHome = Find-Java
     if (-not $javaHome) {
-        if ($script:JavaTooNew) { Warn "Java $($script:JavaTooNew) is installed, but the Android build tools (Gradle $GradleVersion) run on Java $MinJava to $MaxJava only." }
-        else { Warn 'Java 17 (needed to build Android apps) was not found.' }
-        if ($NoAutoFix) { Fail 'Install Java 17 or Android Studio (it includes Java), or set JAVA_HOME to a JDK 17 folder.' }
+        if ($script:JavaTooNew) { Warn "Java $($script:JavaTooNew) is installed (Android Studio's own), but this project's Gradle ($GradleVersion) runs on Java $MinJava to $MaxJava only." }
+        else { Warn "Java $MinJava to $MaxJava (needed to build Android apps) was not found." }
+        if ($NoAutoFix) { Fail "Install Java $JdkVersion, or set JAVA_HOME to a JDK $MinJava to $MaxJava folder." }
         $javaHome = Install-Jdk
     }
     Use-Java $javaHome
@@ -712,7 +774,7 @@ function Initialize-Tools([switch]$NeedSdk, [switch]$NeedAdb) {
     if ($NeedSdk) {
         $script:Sdk = Find-Sdk
         if (-not $script:Sdk) {
-            if ($NoAutoFix) { Fail 'The Android SDK was not found. Open Android Studio once (it installs the SDK to %LOCALAPPDATA%\Android\Sdk) or set ANDROID_HOME to the SDK folder.' }
+            if ($NoAutoFix) { Fail 'The Android SDK was not found. Open Android Studio once (it installs the SDK) or set ANDROID_HOME to the SDK folder.' }
             $script:Sdk = Install-AndroidSdk
         }
         $env:ANDROID_HOME = $script:Sdk
@@ -740,15 +802,28 @@ function Initialize-Tools([switch]$NeedSdk, [switch]$NeedAdb) {
         if ($script:Apksigner) { Ok "apksigner: $(Split-Path -Leaf (Split-Path -Parent $script:Apksigner))" }
         else { Info 'apksigner appears after the first build (Gradle downloads the build tools).' }
     }
+
 }
 
 # ---------------------------------------------------------------- version
 
 function Get-AppVersion {
-    $gradle = Get-Content -Raw -Path ([IO.Path]::Combine($AndroidDir, 'app', 'build.gradle.kts'))
-    $name = if ($VersionName) { $VersionName } elseif ($gradle -match 'versionName\s*=.*\?:\s*"([^"]+)"') { $Matches[1] } else { '0.0.0' }
-    $code = if ($VersionCode -gt 0) { $VersionCode } elseif ($gradle -match 'toIntOrNull\(\)\s*\?:\s*(\d+)') { [int]$Matches[1] } else { 1 }
+    $props = Read-Properties (Join-Path $AndroidDir 'version.properties')
+    $name = if ($VersionName) { $VersionName } elseif ($props['versionName']) { $props['versionName'] } else { '1.0.0' }
+    $code = if ($VersionCode -gt 0) { $VersionCode } elseif ($props['versionCode']) { [int]$props['versionCode'] } else { 1 }
     return @{ Name = $name; Code = $code }
+}
+
+# Saves a new version in android\version.properties (the menu asks before a release)
+function Save-AppVersion([string]$Name, [int]$Code) {
+    $file = Join-Path $AndroidDir 'version.properties'
+    if ($DryRun) { Info "[dry run] version $Name (code $Code)"; return }
+    Set-Content -Path $file -Encoding ASCII -Value @(
+        '# App version shown in the Play Store (versionName) and the number Google Play checks (versionCode).',
+        '# versionCode must go up for every upload to Google Play.',
+        "versionName=$Name",
+        "versionCode=$Code")
+    Ok "App version set to $Name (code $Code)"
 }
 
 # ---------------------------------------------------------------- Gradle
@@ -766,7 +841,7 @@ function Invoke-Gradle([string[]]$Tasks) {
     $applied = @{}
     for ($attempt = 1; $attempt -le 5; $attempt++) {
         $version = Get-AppVersion
-        $arguments = @() + $Tasks + @("-PversionCode=$($version.Code)", "-PversionName=$($version.Name)", '--console=plain')
+        $arguments = @() + $Tasks + @("-PappVersionCode=$($version.Code)", "-PappVersionName=$($version.Name)", '--console=plain')
         $out = Invoke-Native $wrapper $arguments -WorkDir $AndroidDir -AllowFail
         if ($script:LastExit -eq 0) { return }
 
@@ -794,6 +869,10 @@ function Get-KeystorePassword([switch]$New) {
 
 function Get-KeystorePasswordInner([switch]$New) {
     if ($env:ANDROID_KEYSTORE_PASSWORD) { return $env:ANDROID_KEYSTORE_PASSWORD }
+    if (-not $New -and $Legacy['storePassword'] -and (Test-Path $Keystore)) {
+        Info "Using the keystore password saved with the key ($LegacySigning)."
+        return $Legacy['storePassword']
+    }
     if (-not $New -and $OnWindows -and (Test-Path $SecretFile)) {
         try {
             $plain = Read-Plain (Get-Content $SecretFile | ConvertTo-SecureString)
@@ -831,7 +910,7 @@ function New-Keystore {
     $password = Get-KeystorePassword -New
 
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Keystore) | Out-Null
-    $dname = "CN=$($name -replace ',', ' '), O=woodyouloveit"
+    $dname = "CN=$($name -replace ',', ' '), O=woodyouloveit, L=Pune, ST=Maharashtra, C=IN"
     Invoke-Native $Keytool @('-genkeypair', '-v', '-keystore', $Keystore, '-storetype', 'PKCS12', '-keyalg', 'RSA', '-keysize', '4096',
         '-validity', '10000', '-alias', $KeyAlias, '-dname', $dname, '-storepass', $password, '-keypass', $password) -Quiet | Out-Null
     Ok "Key created: $Keystore"
@@ -846,7 +925,7 @@ function Show-KeyFingerprint([string]$Password) {
 
 function Set-SigningEnvironment {
     if (-not (Test-Path $Keystore) -and -not $DryRun) {
-        Fail "No release signing key yet. Create one first:  .\tools\build-android.ps1 -Task Keystore"
+        Fail "No release signing key yet ($Keystore). Create one first: menu option 6, or  .\tools\build-android.ps1 -Task Keystore"
     }
     $password = Get-KeystorePassword
     $env:ANDROID_KEYSTORE_FILE = $Keystore
@@ -878,7 +957,7 @@ function Get-OutputDir {
 
 function Copy-Output([string]$Source, [string]$Kind, [string]$Extension) {
     $version = Get-AppVersion
-    $target = Join-Path (Get-OutputDir) "woodyouloveit-wtms-$($version.Name)-$Kind.$Extension"
+    $target = Join-Path (Get-OutputDir) "$FilePrefix-$($version.Name)-$Kind.$Extension"
     if ($DryRun) { Info "[dry run] copy $Source -> $target"; return $target }
     if (-not (Test-Path $Source)) { Fail "Expected build output is missing: $Source" }
     Copy-Item -Path $Source -Destination $target -Force
@@ -920,7 +999,7 @@ function Get-ConnectedPhones {
     return $phones
 }
 
-function Install-OnPhone([string]$Apk) {
+function Install-OnPhone([string]$Apk, [string]$Package = $AppId) {
     Step 'Installing on the phone'
     if ($DryRun) { Info "[dry run] adb install -r $Apk"; return }
     $phones = @(Get-ConnectedPhones)
@@ -933,17 +1012,20 @@ function Install-OnPhone([string]$Apk) {
         Warn 'The phone has a version signed with a different key (for example debug vs release).'
         $answer = Read-Host '    Uninstall it first? Its saved settings on the phone will be removed. [y/N]'
         if ($answer -match '^[yY]') {
-            Invoke-Native $script:Adb @('uninstall', $AppId) -AllowFail | Out-Null
+            Invoke-Native $script:Adb @('uninstall', $Package) -AllowFail | Out-Null
             $out = Invoke-Native $script:Adb @('install', $Apk) -AllowFail
         }
     }
+    if (($out -join ' ') -match 'INSTALL_FAILED_USER_RESTRICTED|INSTALL_FAILED_ABORTED') {
+        Fail 'The phone blocked the install. Turn on "Install via USB" in Developer options (Xiaomi, Oppo, Vivo and Realme need this), then try again.'
+    }
     if (($out -join ' ') -match 'Success') { Ok "Installed on $($phones[0])" } else { Fail 'Installing on the phone failed (see the messages above).' }
-    if ($Launch) { Start-OnPhone }
+    if ($Launch) { Start-OnPhone $Package }
 }
 
-function Start-OnPhone {
+function Start-OnPhone([string]$Package = $AppId) {
     if ($DryRun) { Info '[dry run] start the app'; return }
-    Invoke-Native $script:Adb @('shell', 'monkey', '-p', $AppId, '-c', 'android.intent.category.LAUNCHER', '1') -Quiet -AllowFail | Out-Null
+    Invoke-Native $script:Adb @('shell', 'monkey', '-p', $Package, '-c', 'android.intent.category.LAUNCHER', '1') -Quiet -AllowFail | Out-Null
     Ok 'App started on the phone'
 }
 
@@ -956,7 +1038,7 @@ function Invoke-DebugBuild {
     $apk = Copy-Output ([IO.Path]::Combine($AndroidDir, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk')) 'debug' 'apk'
     Ok "Debug APK: $apk"
     Write-Checksums (Get-OutputDir)
-    if ($Install) { Install-OnPhone $apk }
+    if ($Install) { Install-OnPhone $apk $DebugAppId }
     return $apk
 }
 
@@ -978,14 +1060,14 @@ function Invoke-ReleaseBuild {
     Write-Checksums (Get-OutputDir)
     Ok "Release APK: $apk"
     Ok "Release AAB (upload this to Google Play): $aab"
-    if ($Install) { Install-OnPhone $apk }
+    if ($Install) { Install-OnPhone $apk $AppId }
     return $aab
 }
 
 function Invoke-TestAab {
     Initialize-Tools -NeedSdk -NeedAdb
     $version = Get-AppVersion
-    $aab = [IO.Path]::Combine($Repo, 'release', 'android', $version.Name, "woodyouloveit-wtms-$($version.Name)-release.aab")
+    $aab = [IO.Path]::Combine($Repo, 'release', 'android', $version.Name, "$FilePrefix-$($version.Name)-release.aab")
     if (-not (Test-Path $aab) -and -not $DryRun) { Fail "No release .aab for $($version.Name) yet. Build it first:  -Task Release" }
 
     Step 'Installing the .aab on the phone, the way Google Play does (bundletool)'
@@ -1014,7 +1096,7 @@ function Invoke-TestAab {
         Remove-Item $passFile, $apks -ErrorAction SilentlyContinue
     }
     Ok 'Installed from the .aab'
-    if ($Launch) { Start-OnPhone }
+    if ($Launch) { Start-OnPhone $AppId }
 }
 
 function Invoke-Doctor {
@@ -1024,7 +1106,8 @@ function Invoke-Doctor {
     if ($phones.Count -gt 0) { $phones | ForEach-Object { Ok "Connected: $_" } } else { Info 'No phone connected (only needed for -Install / TestAab).' }
     Step 'Signing key'
     if (Test-Path $Keystore) { Ok "Release key: $Keystore" } else { Info 'No release key yet (create it with -Task Keystore before the first release).' }
-    if (Test-Path $SecretFile) { Info 'A remembered password is stored for this Windows account.' }
+    if ($Legacy['storePassword']) { Info "The key's password is saved next to it ($LegacySigning): back up the Keys folder and keep it private." }
+    elseif (Test-Path $SecretFile) { Info 'A remembered password is stored for this Windows account.' }
     $version = Get-AppVersion
     Step "App version: $($version.Name) (code $($version.Code))"
 }
@@ -1033,13 +1116,26 @@ function Invoke-Clean {
     Initialize-Tools -NeedSdk
     Step 'Cleaning build outputs'
     Invoke-Gradle @('clean')
-    Ok 'Cleaned android\app\build (release\ is kept)'
+    Ok 'Cleaned android\app\build (release\ and your key are kept)'
+}
+
+# woodyouloveit, written the way the logo reads: wood (you) love it, with "love" in the logo's red
+function Show-Banner {
+    Write-Host ''
+    Write-Host '  wood' -NoNewline -ForegroundColor White
+    Write-Host 'you' -NoNewline -ForegroundColor Gray
+    Write-Host 'love' -NoNewline -ForegroundColor Red
+    Write-Host 'it' -NoNewline -ForegroundColor White
+    Write-Host '   woodyouloveit.com | wooduloveit.com' -ForegroundColor DarkGray
 }
 
 function Show-Menu {
-    Write-Host ''
-    Write-Host '  woodyouloveit Water Tanks Monitor - Android build' -ForegroundColor White
-    Write-Host '  -------------------------------------------------'
+    Show-Banner
+    $v = Get-AppVersion
+    $where = if ($AndroidRoot) { $AndroidRoot } else { 'standard Windows folders' }
+    Write-Host "  $AppName - Android build" -ForegroundColor White
+    Write-Host "  App $($v.Name) (code $($v.Code))   Android folder: $where" -ForegroundColor Gray
+    Write-Host '  ----------------------------------------'
     Write-Host '   1  Debug APK'
     Write-Host '   2  Debug APK, install on my phone and start it'
     Write-Host '   3  Release APK + AAB for Google Play (signed)'
@@ -1061,7 +1157,20 @@ function Show-Menu {
         '8' { $script:Task = 'Clean' }
         default { $script:Quit = $true }
     }
-    if ($script:Task -in 'Release', 'TestAab' -and -not (Test-Path $SecretFile) -and -not $env:ANDROID_KEYSTORE_PASSWORD) {
+    if ($script:Task -eq 'Release' -and -not $VersionName -and $VersionCode -le 0) {
+        $v = Get-AppVersion
+        Write-Host ''
+        Write-Host "  App version $($v.Name) (code $($v.Code)). Google Play needs a higher code for every upload."
+        $newName = Read-Host "  Version name, or Enter to keep $($v.Name)"
+        $newCode = Read-Host "  Version code, or Enter to keep $($v.Code)"
+        $code = $v.Code
+        if ($newCode -and $newCode.Trim()) {
+            if (-not [int]::TryParse($newCode.Trim(), [ref]$code) -or $code -lt 1) { Fail 'The version code must be a whole number.' }
+        }
+        $name = if ($newName -and $newName.Trim()) { $newName.Trim() } else { $v.Name }
+        if ($name -ne $v.Name -or $code -ne $v.Code) { Save-AppVersion $name $code }
+    }
+    if ($script:Task -in 'Release', 'TestAab' -and -not (Test-Path $SecretFile) -and -not $env:ANDROID_KEYSTORE_PASSWORD -and -not $Legacy['storePassword']) {
         $remember = Read-Host '  Remember the keystore password on this PC (encrypted for your Windows account)? [y/N]'
         if ($remember -match '^[yY]') { $script:RememberPassword = $true }
     }
@@ -1070,7 +1179,8 @@ function Show-Menu {
 # ---------------------------------------------------------------- main
 
 try {
-    Write-Log "woodyouloveit Water Tanks Monitor Android build - $(Get-Date -Format s) - task $Task"
+    Write-Log "$AppName Android build (woodyouloveit) - $(Get-Date -Format s) - task $Task"
+    if ($Task -ne 'Menu') { Show-Banner }
     if ($Task -eq 'Menu') { Show-Menu }
     if ($Quit -or $Task -eq 'Menu') { exit 0 }
     if ($DryRun) { Warn 'Dry run: nothing is built, signed or installed.' }

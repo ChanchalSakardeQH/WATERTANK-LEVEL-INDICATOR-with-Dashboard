@@ -25,6 +25,8 @@
                     android:textAppearance="?attr/textAppearanceBodySmall" />
             </LinearLayout>
         </LinearLayout>
+        <LinearLayout android:id="@+id/compBox" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:layout_marginTop="8dp" android:visibility="gone" />
         <com.google.android.material.progressindicator.LinearProgressIndicator
             android:id="@+id/bar"
             android:layout_width="match_parent" android:layout_height="wrap_content"

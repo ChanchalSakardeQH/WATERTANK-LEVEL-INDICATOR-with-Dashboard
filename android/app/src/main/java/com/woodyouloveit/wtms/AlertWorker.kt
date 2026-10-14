@@ -79,7 +79,8 @@ class AlertWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx,
                 // Low water (re-armed once the level is 5 % above the alarm)
                 if (s.low && !state.getBoolean("$key.low", false)) {
                     ed.putBoolean("$key.low", true)
-                    if (AlertSettings.low(ctx)) notify(ctx, index * 10 + 2, "Low water: $name", levelText(s))
+                    if (AlertSettings.low(ctx)) notify(ctx, index * 10 + 2,
+                        "Low water: $name" + if (s.multi) " (" + s.lowNames.joinToString(", ") + ")" else "", levelText(s))
                 } else if (s.valid && s.level >= s.lowAlarm + 5) ed.putBoolean("$key.low", false)
                 // Sensor fault
                 if (!s.valid && !state.getBoolean("$key.fault", false)) {
@@ -99,7 +100,11 @@ class AlertWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx,
         return Result.success()
     }
 
-    private fun levelText(s: TankStatus): String =
+    private fun levelText(s: TankStatus): String = if (s.multi) s.compartments.joinToString(" · ") {
+            if (it.valid) "${it.name} ${Math.round(it.level)}%" + (if (it.capacity > 0) " (${it.litres} L)" else "") else "${it.name}: no echo"
+        } else levelText1(s)
+
+    private fun levelText1(s: TankStatus): String =
         if (!s.valid) "Sensor fault (no echo)"
         else "Level ${Math.round(s.level)}%" + (if (s.capacity > 0) " (≈ ${s.litres} L of ${s.capacity} L)" else "") +
             (if (s.filling) ", filling" else "")
