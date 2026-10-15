@@ -21,7 +21,7 @@
 */
 
 /*
-  Water Tanks Monitor System (WTMS)                        firmware 3.0.0
+  Water Tanks Monitor System (WTMS)                        firmware 3.2.0
   ESP32 DevKit or ESP8266 NodeMCU + AJ-SR04M / JSN-SR04T + WS2812B strip (1-300 LEDs, set in the dashboard)
 
   - Each device is named in the dashboard: society / organisation, building, tank.
@@ -101,7 +101,7 @@
 #include "auth.h"
 #include "history.h"
 
-#define FW_VERSION  "3.0.0"
+#define FW_VERSION  "3.2.0"
 #define PRODUCT     "Water Tanks Monitor System"
 #define DEFAULT_LEDS 30
 #define MAX_LEDS     300
@@ -146,6 +146,9 @@ struct Settings {
   uint8_t  rateProfile;  // 0 eco, 1 balanced, 2 responsive, 3 custom
   uint16_t sensorMs;     // custom: time between sensor readings
   uint8_t  refreshS;     // custom: dashboard refresh (seconds)
+  // added in 3.1.0 (stored in former padding bytes, which read as 0 = the defaults)
+  uint8_t  healCode;     // self-healing restart after no echo: 0 = 30 min (default), 1..24 = x 10 min, 255 = off
+  uint8_t  histPct;      // share of flash storage for history: 0 = automatic (60 %), 20..80 %
 };
 
 // ================= Update rate profiles =================
@@ -170,6 +173,15 @@ WifiCreds creds;
 struct BootInfo { uint32_t magic; uint32_t count; };
 const uint32_t BOOT_MAGIC = 0x59424F54;       // "YBOT"
 const int      BOOT_ADDR  = 200;
+
+// Self-healing restarts in a row (EEPROM offset 176). Reset as soon as every sensor answers again.
+struct HealInfo { uint32_t magic; uint8_t streak; uint8_t lastWasHeal; uint8_t pad[2]; };
+const uint32_t HEAL_MAGIC = 0x57544848;   // "WTHH"
+const int      HEAL_ADDR  = 176;
+const uint8_t  HEAL_MAX_STREAK = 3;       // then only once a day, so a broken wire can't cause a restart loop
+HealInfo heal;
+void saveHeal() { heal.magic = HEAL_MAGIC; EEPROM.put(HEAL_ADDR, heal); EEPROM.commit(); }
+uint16_t healMinutes(uint8_t code) { return code == 255 ? 0 : code == 0 ? 30 : code * 10; }
 uint32_t bootCount = 0;
 
 // ================= Site identity (EEPROM offset 256) =================
@@ -265,7 +277,8 @@ struct SensorStore {
   uint32_t  magic;
   uint8_t   count;            // sensors in use, 1..MAX_SENSORS
   uint8_t   ledMode;          // 0 total level, 1 strip split per compartment (dark LED between), 2 one strip per compartment (chained)
-  uint8_t   reserved[2];
+  uint8_t   ledChain;         // ledMode 2, chained strips: 0 all start at the bottom, 1 zig-zag (every second strip runs top to bottom)
+  uint8_t   reserved1;
   SensorCfg s[WTMS_MAX_SENSORS];
 };
 const uint32_t SENS_MAGIC   = 0x57545331;     // "WTS1"
@@ -314,6 +327,7 @@ void loadSensors() {
     saveSensors();
   }
   for (int i = 0; i < WTMS_MAX_SENSORS; i++) sens.s[i].name[16] = 0;
+  if (sens.ledChain > 1) sens.ledChain = 0;
 }
 
 void saveIdentity() { ident.magic = ID_MAGIC; EEPROM.put(ID_ADDR, ident); EEPROM.commit(); }
@@ -344,6 +358,8 @@ struct SensorRt {
   bool  lastOk = true;
   unsigned long lastLog = 0;
   int   hidden = 0;
+  unsigned long faultSince = 0;   // when the sensor stopped answering (self-healing)
+  bool  softTried = false;        // pins already re-initialised for this fault
 };
 SensorRt srt[WTMS_MAX_SENSORS];
 bool  blinkState = false;
@@ -451,6 +467,11 @@ void loadStorage() {
     saveSettings();
   }
   if (cfg.units > 2) { cfg.units = 0; saveSettings(); }
+  if ((cfg.healCode > 24 && cfg.healCode != 255) || (cfg.histPct && (cfg.histPct < 20 || cfg.histPct > 80))) {
+    if (cfg.healCode > 24 && cfg.healCode != 255) cfg.healCode = 0;
+    if (cfg.histPct && (cfg.histPct < 20 || cfg.histPct > 80)) cfg.histPct = 0;
+    saveSettings();
+  }
   if (cfg.rateProfile > 3 || cfg.sensorMs < 200 || cfg.sensorMs > 30000 || cfg.refreshS < 2 || cfg.refreshS > 60) {
     if (cfg.rateProfile > 3) cfg.rateProfile = 0;
     if (cfg.sensorMs < 200 || cfg.sensorMs > 30000) cfg.sensorMs = 5000;
@@ -484,6 +505,8 @@ void loadStorage() {
   if (ident.magic != ID_MAGIC) memset(&ident, 0, sizeof(ident));
   ident.org[48] = 0; ident.building[32] = 0; ident.tank[32] = 0;
   authLoad();
+  EEPROM.get(HEAL_ADDR, heal);
+  if (heal.magic != HEAL_MAGIC || heal.streak > 100) memset(&heal, 0, sizeof(heal));
   EEPROM.get(PROF_ADDR, prof);
   if (prof.magic != PROF_MAGIC || prof.usage > 1 || prof.location > 3 || prof.shape > 1) {
     memset(&prof, 0, sizeof(prof));
@@ -636,21 +659,29 @@ void setLed(int posFromBottom, uint32_t c) {
   strip.setPixelColor(idx, c);
 }
 
-// A level bar on LEDs [start, start+len), counted from the bottom. fault: bottom LED blinks blue.
-void drawBar(int start, int len, float level, bool fault) {
+// LED i (from the bottom) of the bar on LEDs [start, start+len).
+// flip < 0: the bar is part of one strip, which follows "strip mounted top-down".
+// flip 0 / 1: the bar is its own strip in a chain, running bottom-to-top / top-to-bottom.
+void putLed(int start, int len, int i, uint32_t c, int flip) {
+  if (flip < 0) { setLed(start + i, c); return; }
+  strip.setPixelColor(start + (flip ? len - 1 - i : i), c);
+}
+
+// A level bar, counted from the bottom. fault: the bottom LED blinks blue.
+void drawBar(int start, int len, float level, bool fault, int flip) {
   if (len <= 0) return;
-  if (fault) { setLed(start, blinkState ? strip.Color(0, 0, 255) : 0); return; }
+  if (fault) { putLed(start, len, 0, blinkState ? strip.Color(0, 0, 255) : 0, flip); return; }
   float litF = level * len;
   int fullLeds = (int)litF;
   float partial = litF - fullLeds;
   for (int i = 0; i < len; i++) {
     float t = cfg.colorByLevel ? level : (len > 1 ? (float)i / (len - 1) : 1.0f);
-    if (i < fullLeds)                          setLed(start + i, redToGreen(t));
-    else if (i == fullLeds && partial > 0.05)  setLed(start + i, redToGreen(t, partial));
+    if (i < fullLeds)                          putLed(start, len, i, redToGreen(t), flip);
+    else if (i == fullLeds && partial > 0.05)  putLed(start, len, i, redToGreen(t, partial), flip);
   }
   if (level < cfg.lowAlarm) {
     int k = len >= 9 ? 3 : (len >= 3 ? 1 : 0);
-    for (int i = 0; i < k; i++) setLed(start + i, blinkState ? strip.Color(255, 0, 0) : 0);
+    for (int i = 0; i < k; i++) putLed(start, len, i, blinkState ? strip.Color(255, 0, 0) : 0, flip);
   }
 }
 
@@ -667,22 +698,27 @@ void displayTask() {
   const int ns = sens.count;
   const int gap = sens.ledMode == 1 ? 1 : 0;              // dark LED between compartments on a single strip
   const int seg = ns > 1 ? (cfg.numLeds - gap * (ns - 1)) / ns : 0;
+  // hotspot indicator: the top LED of the (last) bar
+  int topStart = 0, topLen = cfg.numLeds, topFlip = -1;
   if (ns == 1 || sens.ledMode == 0 || seg < 2) {
     float t = totalLevel();
-    if (t < 0) drawBar(0, cfg.numLeds, 0, true);           // no reading at all
+    if (t < 0) drawBar(0, cfg.numLeds, 0, true, -1);       // no reading at all
     else {
-      drawBar(0, cfg.numLeds, t, false);
+      drawBar(0, cfg.numLeds, t, false, -1);
       if (!allSensorsOk()) setLed(0, blinkState ? strip.Color(0, 0, 255) : 0);   // a sensor has a fault
     }
   } else {
-    for (int i = 0; i < ns; i++) {                          // one bar per compartment, sensor 1 at the bottom
+    const bool chained = sens.ledMode == 2;                 // one strip per compartment, chained DOUT -> DIN
+    for (int i = 0; i < ns; i++) {                          // sensor 1 on the first bar / strip
       int start = i * (seg + gap);
       int len = (i == ns - 1) ? cfg.numLeds - start : seg;
+      int flip = chained ? ((cfg.reversed ? 1 : 0) ^ ((sens.ledChain == 1 && (i & 1)) ? 1 : 0)) : -1;
       bool fault = !srt[i].ok || srt[i].smooth < 0;
-      drawBar(start, len, fault ? 0 : srt[i].smooth, fault);
+      drawBar(start, len, fault ? 0 : srt[i].smooth, fault, flip);
+      topStart = start; topLen = len; topFlip = flip;
     }
   }
-  if (apActive && !blinkState) setLed(cfg.numLeds - 1, strip.Color(0, 0, 160));  // hotspot on
+  if (apActive && !blinkState) putLed(topStart, topLen, topLen - 1, strip.Color(0, 0, 160), topFlip);  // hotspot on
   // Only send data to the strip when a pixel actually changed
   size_t n = (size_t)cfg.numLeds * 3;
   const uint8_t* px = strip.getPixels();
@@ -1041,7 +1077,26 @@ void handleStatus() {
   j += ",\"empty\":";        j += String(sens.s[0].emptyCm, 1);
   j += ",\"full\":";         j += String(sens.s[0].fullCm, 1);
   j += ",\"maxSensors\":";   j += String(MAX_SENSORS);
+  j += ",\"heal\":{\"code\":"; j += String(cfg.healCode);
+  j += ",\"minutes\":";      j += String(healMinutes(cfg.healCode));
+  j += ",\"streak\":";       j += String(heal.streak);
+  j += ",\"max\":";          j += String(HEAL_MAX_STREAK);
+  j += "}";
+  {
+    size_t hb = fileSize(HIST_FILE) + fileSize(HIST_OLD);
+    j += ",\"storage\":{\"flash\":"; j += String((uint32_t)ESP.getFlashChipSize());
+    j += ",\"fsTotal\":";      j += String((uint32_t)fsTotalBytes());
+    j += ",\"fsUsed\":";       j += String((uint32_t)fsUsedBytes());
+    j += ",\"histBytes\":";    j += String((uint32_t)hb);
+    j += ",\"histCap\":";      j += String(histFileBytes * 2);
+    j += ",\"recSize\":";      j += String(4 + 2 * histSensors + 2);
+    j += ",\"histPct\":";      j += String(cfg.histPct);
+    j += ",\"sketch\":";       j += String((uint32_t)ESP.getSketchSize());
+    j += ",\"appSlot\":";      j += String((uint32_t)(ESP.getSketchSize() + ESP.getFreeSketchSpace()));
+    j += "}";
+  }
   j += ",\"ledMode\":";      j += String(sens.ledMode);
+  j += ",\"ledChain\":";     j += String(sens.ledChain);
   j += ",\"pins\":[";                                   // wiring for every possible sensor, for the set-up page
   for (int i = 0; i < MAX_SENSORS; i++) {
     if (i) j += ",";
@@ -1180,7 +1235,7 @@ void handleSettings() {
   bool defaults = server.hasArg("defaults");
   uint16_t oldLeds = cfg.numLeds;
   uint8_t oldAp = cfg.apMode, oldPerf = cfg.perfMode, oldTx = cfg.txLevel, oldUnits = cfg.units;
-  uint8_t oldRate = cfg.rateProfile, oldRefresh = cfg.refreshS;
+  uint8_t oldRate = cfg.rateProfile, oldRefresh = cfg.refreshS, oldHeal = cfg.healCode, oldHist = cfg.histPct;
   uint16_t oldSensorMs = cfg.sensorMs;
   uint32_t oldCap = cfg.capacityL;
   if (defaults) {
@@ -1191,6 +1246,7 @@ void handleSettings() {
     cfg.txLevel = oldTx;
     cfg.units = oldUnits;               // measurement unit is a site preference
     cfg.rateProfile = oldRate; cfg.sensorMs = oldSensorMs; cfg.refreshS = oldRefresh;
+    cfg.healCode = oldHeal; cfg.histPct = oldHist;
     cfg.capacityL = oldCap;             // tank size is hardware too
   } else {
     if (server.hasArg("leds"))         cfg.numLeds      = constrain(server.arg("leds").toInt(), 1, MAX_LEDS);
@@ -1211,6 +1267,18 @@ void handleSettings() {
     }
     bool power = false;
     if (server.hasArg("units")) cfg.units = constrain(server.arg("units").toInt(), 0, 2);
+    if (server.hasArg("heal")) {
+      int v = server.arg("heal").toInt();
+      cfg.healCode = (v == 255 || (v >= 0 && v <= 24)) ? v : 0;
+      logWrite('I', "cfg", cfg.healCode == 255 ? String("Setting: self-healing restart off")
+                           : "Setting: self-healing restart after " + String(healMinutes(cfg.healCode)) + " min without echo");
+    }
+    if (server.hasArg("histPct")) {
+      int v = server.arg("histPct").toInt();
+      cfg.histPct = (v >= 20 && v <= 80) ? v : 0;
+      histAllocate(cfg.histPct);
+      logWrite('I', "cfg", "Setting: history uses " + String(histPctUsed) + "% of storage, " + String(histFileBytes * 2 / 1024) + " KB");
+    }
     if (server.hasArg("rate") || server.hasArg("sensorMs") || server.hasArg("refreshS")) {
       if (server.hasArg("rate"))     cfg.rateProfile = constrain(server.arg("rate").toInt(), 0, 3);
       if (server.hasArg("sensorMs")) cfg.sensorMs = constrain(server.arg("sensorMs").toInt(), 200, 30000);
@@ -1310,9 +1378,155 @@ void handleRestart() {
 
 void handleLog()      { if (!needAdmin()) return; logStream(server, server.hasArg("download")); }
 
+// ================= Self-healing =================
+// 1) After 2 min without an echo: re-initialise that sensor's pins (fixes many glitches, no restart).
+// 2) After the configured time (default 30 min): restart the board, logged with the reason.
+//    At most HEAL_MAX_STREAK restarts in a row; then once a day, until every sensor answers again.
+void healTask() {
+  static unsigned long lastCheck = 0;
+  static bool pausedLogged = false;
+  const unsigned long now = millis();
+  if (now - lastCheck < 5000) return;
+  lastCheck = now;
+  int worst = -1;
+  unsigned long longest = 0;
+  for (int i = 0; i < sens.count; i++) {
+    SensorRt& r = srt[i];
+    if (r.ok) { r.faultSince = 0; r.softTried = false; continue; }
+    if (!r.faultSince) r.faultSince = now ? now : 1;
+    unsigned long d = now - r.faultSince;
+    if (d >= longest) { longest = d; worst = i; }
+  }
+  if (worst < 0) {                                         // every sensor answers
+    if (heal.streak) { heal.streak = 0; saveHeal(); logWrite('I', "sys", "Sensors answering again: self-healing counter reset"); }
+    pausedLogged = false;
+    return;
+  }
+  if (longest > 120000UL && !srt[worst].softTried) {
+    srt[worst].softTried = true;
+    initSensorPins(worst);
+    logWrite('W', "sensor", sensorWho(worst) + "No echo for 2 min: sensor pins re-initialised");
+  }
+  const unsigned long limit = healMinutes(cfg.healCode) * 60000UL;
+  if (!limit || longest < limit || restartAt) return;
+  if (heal.streak >= HEAL_MAX_STREAK && now < 86400000UL) {  // loop guard: next try after a day of uptime
+    if (!pausedLogged) {
+      pausedLogged = true;
+      logWrite('W', "sys", "Self-healing paused after " + String(heal.streak) +
+                           " restarts in a row: the sensor still has no echo. Check its wiring. Next try in 24 h.");
+    }
+    return;
+  }
+  heal.streak++;
+  heal.lastWasHeal = 1;
+  saveHeal();
+  logWrite('W', "sys", sensorWho(worst) + "Self-healing restart: no echo for " + String(longest / 60000UL) + " min (restart " +
+                       String(heal.streak) + (heal.streak <= HEAL_MAX_STREAK ? " of " + String(HEAL_MAX_STREAK) : String(", daily retry")) + ")");
+  restartAt = millis() + 1500;
+}
+
+// ================= Sensor test (admin, no restart) =================
+// Re-initialises the sensor, checks the echo line at rest, then pings 5 times with the current trigger pulse
+// and with 20, 50, 200 and 500 us. The dashboard turns the result into a verdict and advice.
+void handleDiag() {
+  if (!needAdmin()) return;
+  const int i = server.hasArg("sensor") ? constrain((int)server.arg("sensor").toInt(), 0, sens.count - 1) : 0;
+  initSensorPins(i);
+  delay(5);
+  int highs = 0;
+  for (int k = 0; k < 20; k++) { highs += digitalRead(ECHO_PINS[i]) == HIGH; delayMicroseconds(150); }
+  const uint16_t saved = cfg.trigUs;
+  const uint16_t pulses[5] = {saved, 20, 50, 200, 500};
+  String j;
+  j.reserve(900);
+  j += "{\"ok\":true,\"sensor\":"; j += String(i);
+  j += ",\"name\":\""; j += jsonEscape(sens.s[i].name);
+  j += "\",\"trig\":\""; j += TRIG_NAMES[i]; j += "\",\"echo\":\""; j += ECHO_NAMES[i];
+  j += "\",\"idleHigh\":"; j += String(highs);
+  j += ",\"current\":"; j += String(saved);
+  j += ",\"results\":[";
+  int totalHits = 0;
+  bool first = true;
+  for (int p = 0; p < 5; p++) {
+    if (p > 0 && pulses[p] == saved) continue;
+    cfg.trigUs = pulses[p];
+    float d[5];
+    int hits = 0;
+    for (int k = 0; k < 5; k++) {
+      float x = readDistanceOnce(i);
+      if (x > 0) d[hits++] = x;
+      delay(65);
+      WTMS_WDT_FEED();
+    }
+    for (int a = 1; a < hits; a++) { float v = d[a]; int b = a - 1; while (b >= 0 && d[b] > v) { d[b + 1] = d[b]; b--; } d[b + 1] = v; }
+    totalHits += hits;
+    if (!first) j += ",";
+    first = false;
+    j += "{\"us\":"; j += String(pulses[p]);
+    j += ",\"hits\":"; j += String(hits);
+    j += ",\"median\":"; j += hits ? String(d[hits / 2], 1) : String("null");
+    j += ",\"min\":"; j += hits ? String(d[0], 1) : String("null");
+    j += ",\"max\":"; j += hits ? String(d[hits - 1], 1) : String("null");
+    j += "}";
+  }
+  cfg.trigUs = saved;
+  j += "]}";
+  lastLoopAt = millis();                                   // a test is not a stuck loop
+  logWrite('I', "sensor", sensorWho(i) + "Sensor test: " + String(totalHits) + " echoes from " + String(first ? 0 : 25) +
+                          " pings, echo line high at rest " + String(highs) + "/20");
+  sendJson(200, j);
+}
+
+// ================= History download =================
+// ?since=<unix time> sends only newer records (binary search: records are in time order), so the
+// dashboard loads a few days quickly even when months are stored
+size_t histSeek(File& f, size_t rs, uint32_t since) {
+  size_t lo = 0, hi = f.size() / rs;
+  while (lo < hi) {
+    size_t mid = (lo + hi) / 2;
+    uint32_t t = 0;
+    f.seek(mid * rs);
+    f.read((uint8_t*)&t, 4);
+    if (t < since) lo = mid + 1; else hi = mid;
+  }
+  return lo * rs;
+}
+
 void handleHistory() {
+  const uint32_t since = server.hasArg("since") ? (uint32_t)strtoul(server.arg("since").c_str(), nullptr, 10) : 0;
+  const size_t rs = 4 + 2 * histSensors + 2;
   const char* files[] = {HIST_OLD, HIST_FILE};
-  streamFiles(server, files, 2, "application/octet-stream", server.hasArg("download") ? "wtms-history.bin" : nullptr);
+  size_t off[2] = {0, 0}, len[2] = {0, 0}, total = 0;
+  for (int i = 0; i < 2; i++) {
+    if (!logFsOK || !LittleFS.exists(files[i])) continue;
+    File f = LittleFS.open(files[i], "r");
+    if (!f) continue;
+    size_t sz = f.size() - f.size() % rs;
+    off[i] = since ? histSeek(f, rs, since) : 0;
+    len[i] = sz > off[i] ? sz - off[i] : 0;
+    total += len[i];
+    f.close();
+  }
+  server.sendHeader("Cache-Control", "no-store");
+  if (server.hasArg("download")) server.sendHeader("Content-Disposition", "attachment; filename=\"wtms-history.bin\"");
+  server.setContentLength(total);
+  server.send(200, "application/octet-stream", "");
+  char buf[1024];
+  for (int i = 0; i < 2; i++) {
+    if (!len[i]) continue;
+    File f = LittleFS.open(files[i], "r");
+    if (!f) continue;
+    f.seek(off[i]);
+    size_t left = len[i];
+    while (left) {
+      size_t n = f.readBytes(buf, left < sizeof(buf) ? left : sizeof(buf));
+      if (!n) break;
+      server.sendContent(buf, n);
+      left -= n;
+      WTMS_WDT_FEED();
+    }
+    f.close();
+  }
 }
 void handleFills() {
   const char* files[] = {FILL_OLD, FILL_FILE};
@@ -1360,6 +1574,7 @@ void handleSensors() {
   if (!needAdmin()) return;
   const int count = server.hasArg("count") ? constrain((int)server.arg("count").toInt(), 1, (int)MAX_SENSORS) : sens.count;
   if (server.hasArg("ledMode")) sens.ledMode = constrain((int)server.arg("ledMode").toInt(), 0, 2);
+  if (server.hasArg("ledChain")) sens.ledChain = constrain((int)server.arg("ledChain").toInt(), 0, 1);
   for (int i = 0; i < MAX_SENSORS; i++) {
     String k(i);
     if (server.hasArg("name" + k)) {
@@ -1534,6 +1749,13 @@ void setup() {
 #endif
   if (!logFsOK) logWrite('W', "sys", "Flash log unavailable: log kept in memory only. Check Tools > Partition Scheme (ESP32) or Flash Size with FS (ESP8266).");
   historyMigrate();
+  histAllocate(cfg.histPct);
+  logWrite('I', "sys", "Storage " + String(fsTotalBytes() / 1024) + " KB: history " + String(histFileBytes * 2 / 1024) +
+                       " KB (" + String(histPctUsed) + "%)");
+  if (heal.lastWasHeal) {
+    heal.lastWasHeal = 0; saveHeal();
+    logWrite('W', "sys", "Started after a self-healing restart (" + String(heal.streak) + " in a row)");
+  }
   if (logFsFormatted) logWrite('I', "sys", "Flash storage was blank and has been formatted (normal after the first upload or 'Erase All Flash').");
   if (bootCount == 1) logWrite('I', "sys", "First start: settings are at their defaults. Keep Tools > 'Erase All Flash Before Sketch Upload' Disabled to keep them across uploads.");
 
@@ -1604,6 +1826,7 @@ void setup() {
   server.on("/api/site",          HTTP_POST, handleSite);
   server.on("/api/profile",       HTTP_POST, handleProfile);
   server.on("/api/sensors",       HTTP_POST, handleSensors);
+  server.on("/api/diag",          HTTP_POST, handleDiag);
   server.on("/api/auth",          HTTP_GET,  handleAuth);
   server.on("/api/login",         HTTP_POST, handleLogin);
   server.on("/api/logout",        HTTP_POST, handleLogout);
@@ -1612,6 +1835,10 @@ void setup() {
   server.onNotFound(handleNotFound);
   server.begin();
   lastLoopAt = millis();
+#if defined(ESP32)
+  esp_task_wdt_init(30, true);                          // restart if the main loop hangs for 30 s
+  esp_task_wdt_add(NULL);
+#endif
 }
 
 void loop() {
@@ -1631,6 +1858,8 @@ void loop() {
   historyTask(dist);
   displayTask();
   buttonTask();
+  healTask();
+  WTMS_WDT_FEED();
 
   static unsigned long lastLog = 0;                   // live values on Serial in performance mode only
   if (cfg.perfMode && millis() - lastLog > 1000) {

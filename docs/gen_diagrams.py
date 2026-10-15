@@ -361,16 +361,48 @@ def small_sensor(s, x, y, w, h, title, pins, side="right", probe=None):
         s.add(f"<circle cx='{cx}' cy='{cy}' r='10' fill='#212121' stroke='#555' stroke-width='1.5'/>")
 
 
+
+def vstrip(s, x, top, bot, label, din_bottom=True, n=8):
+    """A vertical WS2812B strip (30 px wide) with n LEDs, DIN/DOUT labels, +5V and GND stubs on its right."""
+    s.add(f"<rect x='{x}' y='{top}' width='30' height='{bot-top}' rx='5' fill='#edf7ee' stroke='#2e7d32' stroke-width='1.6'/>")
+    cols = ["#e53935", "#f4511e", "#fb8c00", "#fdd835", "#c0ca33", "#7cb342", "#43a047", "#2e7d32"]
+    step = (bot - top - 16) / n
+    for i in range(n):                                    # the level always fills from the bottom (red) up (green)
+        yy = bot - 8 - (i + 1) * step
+        s.add(f"<rect x='{x+7}' y='{yy+2:.1f}' width='16' height='{step-4:.1f}' rx='2' fill='{cols[i*len(cols)//n]}'/>")
+    s.text(x + 15, (bot + 13) if din_bottom else (top - 5), "DIN", 9, "middle", "bold", C_DIN, mono=True)
+    s.text(x + 15, (top - 5) if din_bottom else (bot + 13), "DOUT", 9, "middle", "bold", "#555", mono=True)
+    yv, yg = top + 26, bot - 26
+    s.wire([(x + 30, yv), (x + 46, yv)], C_5V); s.text(x + 49, yv + 4, "+5V", 10, "start", "bold", C_5V)
+    s.wire([(x + 30, yg), (x + 42, yg), (x + 42, yg + 6)], C_GND); s.gnd(x + 42, yg + 6)
+    first, second = label.split(" · ")
+    s.text(x + 15, bot + 32, first, 11, "middle", "bold", "#2e7d32")
+    s.text(x + 15, bot + 46, second, 10, "middle", fill="#2e7d32")
+
+
+def strip_chain(s, x0, top, bot, gap, count, din_x0, din_y):
+    """count strips chained zig-zag, fed from a data wire that arrives at (din_x0, din_y) below strip 1."""
+    xs = [x0 + i * gap for i in range(count)]
+    for i, x in enumerate(xs):
+        vstrip(s, x, top, bot, f"Strip {i+1} · sensor {i+1}", din_bottom=(i % 2 == 0))
+    # data: G16/D2 -> 330R -> strip 1 DIN (bottom)
+    s.wire([(din_x0, din_y), (xs[0] + 15, din_y), (xs[0] + 15, bot)], C_DIN)
+    for i in range(count - 1):                            # DOUT -> next DIN, alternating top and bottom
+        if i % 2 == 0:
+            s.wire([(xs[i] + 15, top), (xs[i] + 15, top - 18), (xs[i + 1] + 15, top - 18), (xs[i + 1] + 15, top)], C_DIN)
+        else:
+            s.wire([(xs[i] + 15, bot), (xs[i] + 15, bot + 18), (xs[i + 1] + 15, bot + 18), (xs[i + 1] + 15, bot)], C_DIN)
+
 def esp32_multi():
     """ESP32 with up to 4 sensors: sensor 1 on the right (as before), sensors 2-4 on the left."""
     global BX0, BX1
     keep = (BX0, BX1)
     BX0, BX1 = 470, 670
     try:
-        s = Svg(1330, 690)
+        s = Svg(1600, 690)
         s.text(40, 40, "ESP32 DevKit V1: up to 4 ultrasonic sensors (one per tank compartment)", 20, weight="bold")
-        s.text(40, 62, "Sensor 1 D15/D2 · sensor 2 D32/D35 · sensor 3 D33/D34 · sensor 4 D25/D26 · LED strip G16 · "
-                       "every sensor powered from 3V3", 13, fill="#555")
+        s.text(40, 62, "Sensor 1 D15/D2 · sensor 2 D32/D35 · sensor 3 D33/D34 · sensor 4 D25/D26 · one LED strip per compartment, "
+                       "chained on G16 · every sensor powered from 3V3", 13, fill="#555")
         left = ["EN", "VP 36", "VN 39", "D34", "D35", "D32", "D33", "D25", "D26", "D27",
                 "D14", "D12", "D13", "GND", "VIN"]
         right = ["D23", "D22", "TX0", "RX0", "D21", "D19", "D18", "D5", "TX2 17", "RX2 16",
@@ -420,12 +452,17 @@ def esp32_multi():
         s.text(833, 563, "Sensor 1: D15 = TRIG, D2 = ECHO, not swapped:", 11, "middle", fill="#e65100")
         s.text(833, 577, "D2 must be LOW while uploading", 11, "middle", fill="#e65100")
 
-        # ---- LED strip and supply ----
-        g16, din = pin_y(9), 150
-        led_block(s, sx, din - 36, din)
-        s.wire([(BX1, g16), (800, g16), (800, din), (890, din)], C_DIN)
-        s.resistor_h(890, sx, din, C_DIN, "330Ω")
-        power_block(s, sx + 40, 250)
+        # ---- LED strips: one per compartment, chained zig-zag on G16 ----
+        g16, top, bot = pin_y(9), 104, 288
+        s.wire([(BX1, g16), (800, g16), (800, 306)], C_DIN)
+        s.resistor_h(800, 880, 306, C_DIN, "330Ω")
+        strip_chain(s, 960, top, bot, 110, 3, 880, 306)
+        s.add("<rect x='1290' y='96' width='214' height='108' rx='6' fill='#edf7ee' stroke='#2e7d32' stroke-width='1.5'/>")
+        s.text(1397, 116, "Chained LED strips", 12, "middle", "bold", "#2e7d32")
+        for k, line in enumerate(["Zig-zag: strip 1 up, strip 2 down,", "strip 3 up: each DOUT beside the next DIN.",
+                                  "5V and GND to every strip.", "Setup: LED strip shows → One strip per", "compartment · LEDs per strip · Zig-zag"]):
+            s.text(1397, 134 + k * 15, line, 10, "middle", fill="#333")
+        power_block(s, 1310, 254)
         legend(s, 620, [("+5V", C_5V), ("3.3V", C_3V3), ("GND", C_GND), ("TRIG", C_TRIG),
                         ("ECHO", C_ECHO), ("LED data", C_DIN)])
         return s.out()
@@ -435,9 +472,9 @@ def esp32_multi():
 
 def esp8266_multi():
     """NodeMCU with 2 sensors (sensor 2 on D7/D1, shown with net labels)."""
-    s = Svg(1000, 760)
+    s = Svg(1060, 760)
     s.text(40, 40, "NodeMCU ESP8266: 2 sensors (one per compartment)", 20, weight="bold")
-    s.text(40, 62, "Sensor 1 TRIG D5 / ECHO D6 · sensor 2 TRIG D7 / ECHO D1 · LED strip D2 · sensors powered from 3V3",
+    s.text(40, 62, "Sensor 1 TRIG D5 / ECHO D6 · sensor 2 TRIG D7 / ECHO D1 · two LED strips chained on D2 · sensors on 3V3",
            13, fill="#555")
     left = ["A0", "RSV", "RSV", "SD3", "SD2", "SD1", "CMD", "SD0", "CLK", "GND",
             "3V3", "EN", "RST", "GND", "VIN"]
@@ -450,9 +487,14 @@ def esp8266_multi():
 
     sx = 640
     d2 = pin_y(2)
-    led_block(s, sx, d2 - 36, d2)
-    s.wire([(BX1, d2), (560, d2)], C_DIN)
-    s.resistor_h(560, sx, d2, C_DIN, "330Ω")
+    s.wire([(BX1, d2), (520, d2)], C_DIN)
+    s.resistor_h(520, 580, d2, C_DIN, "330Ω")
+    s.wire([(580, d2), (600, d2), (600, 204)], C_DIN)
+    strip_chain(s, 640, 98, 188, 100, 2, 600, 204)
+    s.add("<rect x='830' y='96' width='200' height='80' rx='6' fill='#edf7ee' stroke='#2e7d32' stroke-width='1.5'/>")
+    s.text(930, 115, "Chained LED strips", 12, "middle", "bold", "#2e7d32")
+    for k, line in enumerate(["Zig-zag: strip 1 up, strip 2 down.", "5V and GND to both strips.", "Setup: One strip per compartment"]):
+        s.text(930, 133 + k * 15, line, 10, "middle", fill="#333")
 
     # Sensor 1 (as before)
     trig_y, echo_y = pin_y(7), pin_y(8)

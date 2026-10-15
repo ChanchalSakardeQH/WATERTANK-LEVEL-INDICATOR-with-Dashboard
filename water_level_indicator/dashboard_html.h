@@ -66,8 +66,8 @@ main{max-width:1100px;margin:0 auto;padding:16px;display:grid;gap:16px;grid-temp
 #aKpi{grid-area:akpi}#aChart{grid-area:achart}#aMotor{grid-area:amotor}#aUse{grid-area:ause}#aHour{grid-area:ahour}#aNight{grid-area:anight}#aSet{grid-area:aset}
 #banners{grid-area:ban}
 #tabOverview:has(#banners[hidden]){grid-template-areas:'level glance'}#cLevel{grid-area:level}#cGlance{grid-area:glance}
-#tabSetup{grid-template-columns:1fr 1fr;grid-template-areas:'prof cal' 'sens cal' 'site disp' 'power disp' 'rate dev' 'admin ota' 'wifi wifi';align-items:start}
-#cProfile{grid-area:prof}#cPower{grid-area:power}#cAdmin{grid-area:admin}#cSensors{grid-area:sens}#cRate{grid-area:rate}#cOta{grid-area:ota}#cCal{grid-area:cal}#cSite{grid-area:site}#cDisp{grid-area:disp}#cWifi{grid-area:wifi}#cDev{grid-area:dev}}
+#tabSetup{grid-template-columns:1fr 1fr;grid-template-areas:'prof cal' 'sens cal' 'site disp' 'power disp' 'rate dev' 'stor dev' 'admin ota' 'wifi wifi';align-items:start}
+#cProfile{grid-area:prof}#cPower{grid-area:power}#cAdmin{grid-area:admin}#cStorage{grid-area:stor}#cSensors{grid-area:sens}#cRate{grid-area:rate}#cOta{grid-area:ota}#cCal{grid-area:cal}#cSite{grid-area:site}#cDisp{grid-area:disp}#cWifi{grid-area:wifi}#cDev{grid-area:dev}}
 .card{background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:18px}
 .card h2{font-size:15px;margin:0 0 14px;color:var(--muted);font-weight:600;letter-spacing:.02em}
 .hero{display:flex;gap:20px;align-items:stretch}
@@ -115,6 +115,9 @@ h3.sub{font-size:14px;margin:20px 0 6px;color:var(--text)}
 .cbar{height:8px;border-radius:999px;background:var(--input);overflow:hidden;margin-top:4px}.cbar i{display:block;height:100%}
 .sens{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}.sens .sh{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline}
 #calSeg,#viewSeg{margin:0 0 12px}
+.dverdict{padding:12px;border-radius:10px;margin:10px 0;font-weight:600}.dverdict.ok{background:rgba(22,163,74,.12);color:var(--ok)}
+.dverdict.warn{background:rgba(217,119,6,.12);color:var(--warn)}.dverdict.bad{background:rgba(220,38,38,.12);color:var(--danger)}
+.dtable{width:100%;border-collapse:collapse;font-size:13px}.dtable td,.dtable th{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left}
 .litres{font-size:15px;color:var(--muted);margin:-2px 0 8px;font-weight:600}
 .gstats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}.gstats .stat b{font-size:20px}
 .seg[id=segUsage]{margin-bottom:0}
@@ -388,11 +391,46 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
         <option value="0">Whole tank, one bar</option>
         <option value="1">Split strip, one bar each</option>
         <option value="2">One strip per compartment</option></select>
-        <p class="help">Split: a dark LED between the bars. One strip each: chain the strips (DOUT → DIN) and set the total LED count.</p></div>
+        <p class="help">Split: one strip, a dark LED between the bars. One strip each: separate strips chained DOUT → DIN on the same data pin.</p></div>
+    </div>
+    <div class="row2" id="fChain" hidden>
+      <div class="field"><label for="inLedPer">LEDs per strip</label><input type="number" id="inLedPer" min="2" max="150" inputmode="numeric">
+        <p class="help" id="ledPerHelp"></p></div>
+      <div class="field"><label for="inLedChain">Strips mounted</label><select id="inLedChain" class="sel">
+        <option value="1">Zig-zag (shortest wiring)</option><option value="0">All start at the bottom</option></select>
+        <p class="help">Zig-zag: strip 1 runs up, strip 2 down, strip 3 up, so each DOUT is next to the next DIN.</p></div>
     </div>
     <div id="sensRows"></div>
     <p class="help" id="sensNote"></p>
-    <div style="margin-top:12px"><button class="btn" onclick="saveSensors()">Save sensors</button></div>
+    <div class="field" style="margin-top:14px"><label for="inHeal">Self-healing restart</label>
+      <select id="inHeal" class="sel">
+        <option value="255">Off</option><option value="1">After 10 min without echo</option><option value="2">After 20 min without echo</option>
+        <option value="0">After 30 min without echo (recommended)</option><option value="6">After 1 hour without echo</option>
+        <option value="12">After 2 hours without echo</option><option value="24">After 4 hours without echo</option></select>
+      <p class="help" id="healHelp">After 2 minutes without an echo the sensor's pins are reset; if that doesn't help, the board restarts after this time.
+        At most 3 restarts in a row, then once a day, so a broken wire can't cause a restart loop.</p></div>
+    <div class="btns" style="margin-top:12px">
+      <button class="btn" onclick="saveSensors()">Save sensors</button>
+      <button class="btn sec" onclick="diagAll()">Test sensors</button></div>
+  </section>
+
+  <section class="card" id="cStorage">
+    <h2>STORAGE &amp; HISTORY</h2>
+    <div class="kv" style="margin-top:0">
+      <span>Flash chip</span><b id="stFlash">--</b>
+      <span>Data storage (partition)</span><b id="stFs">--</b>
+      <span>History space</span><b id="stHist">--</b>
+      <span>Keeps about</span><b id="stDays">--</b>
+    </div>
+    <div class="cbar" style="margin:12px 0 4px"><i id="stBar" style="width:0;background:var(--accent)"></i></div>
+    <p class="help" id="stUse"></p>
+    <div class="field" style="margin-top:10px"><label for="inHistPct">Share of storage for history</label>
+      <select id="inHistPct" class="sel"><option value="0">Automatic (60 %, recommended)</option><option value="30">30 %</option>
+        <option value="45">45 %</option><option value="75">75 %</option></select>
+      <p class="help">History is kept permanently on the chip. When its space is full, the oldest part is dropped and the newest kept.
+        The log keeps its own 24 KB.</p></div>
+    <div class="alert info" id="stAdvice"></div>
+    <div style="margin-top:12px"><button class="btn" onclick="saveStorage()">Save</button></div>
   </section>
 
   <section class="card" id="cPower">
@@ -539,7 +577,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
   </section>
   <section class="card" id="aChart">
     <h2>LEVEL HISTORY</h2>
-    <div class="seg" id="rangeSeg"><button data-h="24" class="on">24 h</button><button data-h="72">3 days</button><button data-h="168">7 days</button><button data-h="336">14 days</button></div>
+    <div class="seg" id="rangeSeg"><button data-h="24" class="on">24 h</button><button data-h="72">3 days</button><button data-h="168">7 days</button><button data-h="336">14 days</button><button data-h="720">30 days</button><button data-h="2160">90 days</button><button data-h="0">All</button></div>
     <div class="chart" id="levelChart"></div>
     <div class="legend"><span><i style="background:rgba(22,163,74,.22)"></i>Filling (motor on)</span><span><i style="background:rgba(100,116,139,.16)"></i>Night check window</span></div>
   </section>
@@ -626,6 +664,11 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
   <p class="help" id="shareNote" style="margin-top:10px"></p>
   <div style="margin-top:12px"><button class="btn sec" onclick="closeShare()">Close</button></div>
 </div></div>
+<div class="modal" id="diagModal"><div class="card"><h2 id="diagTitle">SENSOR TEST</h2>
+  <div id="diagBody"></div>
+  <div class="btns" style="margin-top:12px"><button class="btn" id="diagFix" hidden>Use this pulse</button>
+    <button class="btn sec" onclick="$('diagModal').classList.remove('show')">Close</button></div>
+</div></div>
 <div class="modal" id="loginModal"><div class="card"><h2>ADMIN LOGIN</h2>
   <div class="field"><label for="inPw">Password</label><input type="password" id="inPw" autocomplete="current-password"></div>
   <p class="help" id="loginErr" style="color:var(--danger)"></p>
@@ -679,12 +722,15 @@ function render(){
   $('alertFault').textContent=multi()?`Sensor fault (no echo): ${bad.map(x=>x.name).join(', ')}. Check that sensor's wiring and that its probe faces the water.`
     :'Sensor fault: no echo. Check the sensor wiring and that the probe faces the water.';
   $('alertLow').textContent=multi()?`Low water: ${lowS.map(x=>`${x.name} ${Math.round(x.level)}%`).join(', ')}.`:'Low water level.';
+  if(fault&&isAdmin())$('alertFault').innerHTML=esc($('alertFault').textContent)+
+    ` <a href="#" onclick="runDiag(${JSON.stringify(S.map((x,i)=>x.valid?-1:i).filter(i=>i>=0))});return false">Test ${bad.length>1?'these sensors':'the sensor'}</a>`+
+    (st.heal&&st.heal.minutes?` · self-healing restart after ${st.heal.minutes} min`+(st.heal.streak?` (${st.heal.streak} so far)`:''):'');
   $('alertFault').classList.toggle('show',fault);$('alertLow').classList.toggle('show',low);
   $('chip').className='chip'+(fault?' bad':low?' warn':'');
   $('chipText').textContent=fault?'Sensor fault':low?'Low water':'Online';
   $('btnEmpty').disabled=$('btnFull').disabled=!c.valid;
   $('profMultiNote').hidden=!multi();$('profDepthCap').hidden=multi();
-  if(isAdmin()){fillSensors();renderSensors();}
+  if(isAdmin()){fillSensors();renderSensors();renderStorage();}
 
   // Wi-Fi
   const conn=w.state==='connected';
@@ -778,13 +824,21 @@ let sensLoaded=false;
 function fillSensors(){if(sensLoaded||!st.pins)return;sensLoaded=true;
   const max=st.maxSensors||1;
   $('inSensCount').innerHTML=Array.from({length:max},(_,i)=>`<option value="${i+1}">${i?(i+1)+' compartments':'1 (one tank)'}</option>`).join('');
-  $('inSensCount').value=String(SN().length);$('inLedMode').value=String(st.ledMode||0);sensRows();}
+  $('inSensCount').value=String(SN().length);$('inLedMode').value=String(st.ledMode||0);
+  if(st.heal)$('inHeal').value=String(st.heal.code);
+  $('inLedChain').value=String(st.ledChain||0);$('inLedPer').value=Math.max(2,Math.round(st.leds/Math.max(1,SN().length)));
+  sensRows();}
+function chainUI(){const n=+$('inSensCount').value,on=n>1&&$('inLedMode').value==='2';$('fChain').hidden=!on;
+  if(on){const per=Math.round(iv('inLedPer')),tot=per*n;
+    $('ledPerHelp').textContent=`${n} strips × ${per} = ${tot} LEDs in total`+(tot>300?' (more than 300: too many)':'')+'. The first strip shows sensor 1.';}}
+$('inLedMode').onchange=chainUI;$('inLedPer').oninput=chainUI;
 function sensRows(){
   const n=+$('inSensCount').value,S=SN(),P=st.pins||[];
-  $('fLedMode').hidden=n<2;
+  $('fLedMode').hidden=n<2;chainUI();
   const dv=mm=>mm?+(mm/10*UN().f).toFixed(ul()==='mm'?0:ul()==='in'?2:1):'';
   $('sensRows').innerHTML=Array.from({length:n},(_,i)=>{const s=S[i]||{},p=P[i]||{};
-    const head=`<div class="sh"><b>Sensor ${i+1}</b><span class="help">TRIG ${p.trig||'?'} → sensor RX · ECHO ${p.echo||'?'} ← sensor TX · 5V pin → 3V3 · GND</span></div>`;
+    const head=`<div class="sh"><b>Sensor ${i+1}</b><span class="help">TRIG ${p.trig||'?'} → sensor RX · ECHO ${p.echo||'?'} ← sensor TX · 5V pin → 3V3 · GND</span>`+
+      (i<S.length?`<button class="btn sec small" style="margin-left:auto" onclick="runDiag([${i}])">Test</button>`:'')+`</div>`;
     const read=`<p class="help" id="sRead${i}"></p>`;
     if(n===1)return `<div class="sens">${head}${read}<p class="help">Capacity and water depth: <a href="#cProfile">Usage &amp; tank</a>.</p></div>`;
     return `<div class="sens">${head}<div class="row3">
@@ -802,10 +856,14 @@ async function saveSensors(){
   const n=+$('inSensCount').value,old=SN().length;
   if(n!==old&&!await ask(`Use ${n} sensor${n>1?'s':''}? The level history and fills recorded so far are cleared, because each record holds one reading per sensor. `+
     'Download a PDF report or the data (CSV) first if you need them.'))return;
-  const d={count:n,ledMode:$('inLedMode').value};
+  const d={count:n,ledMode:$('inLedMode').value,ledChain:$('inLedChain').value};
+  if(n>1&&$('inLedMode').value==='2'){const per=Math.round(iv('inLedPer')),tot=per*n;
+    if(!(per>=2&&tot<=300)){toast('LEDs per strip: at least 2, and at most 300 in total',true);return;}
+    await post('/api/settings',{heal:$('inHeal').value,leds:tot});}
+  else await post('/api/settings',{heal:$('inHeal').value});
   if(n>1)for(let i=0;i<n;i++){d['name'+i]=$('sName'+i).value.trim();d['cap'+i]=Math.round(iv('sCap'+i));d['depth'+i]=Math.round(iv('sDepth'+i)/UN().f*10);}
   const j=await post('/api/sensors',d);
-  if(j.ok){sensLoaded=false;formLoaded=false;profLoaded=false;aLoaded=false;calSel=Math.min(calSel,n-1);await poll();loadAnalytics();}}
+  if(j.ok){sensLoaded=false;formLoaded=false;profLoaded=false;aLoaded=false;loadedDays=0;calSel=Math.min(calSel,n-1);await poll();loadAnalytics();}}
 
 // ---- Usage & tank profile ----
 // Loft tank sizes (rated litres; outer length x width x height in mm)
@@ -1165,7 +1223,7 @@ function logFile(){
 async function pdfFile(){if(!aLoaded)await loadAnalytics();if(!ana||!st)throw new Error('No analytics data yet');
   return {blob:buildReport(await logoJpeg()),name:`wtms-report-${fileTag()}${dstamp()}.pdf`};}
 // Level history and fills as CSV (opens in Excel / Google Sheets)
-async function csvFile(){if(!aLoaded)await loadAnalytics();if(!histAll.length)throw new Error('No level history recorded yet');
+async function csvFile(){if(!aLoaded||loadedDays!==Infinity)await loadAnalytics(Infinity);if(!histAll.length)throw new Error('No level history recorded yet');
   const u=ul(),S=SN(),q=v=>`"${String(v).replace(/"/g,'""')}"`,dp=ul()==='mm'?0:ul()==='in'?2:1;
   const ds=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`,ts=d=>`${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const pc=(s,mm)=>Math.max(0,Math.min(100,(s.empty*10-mm)/((s.empty-s.full)*10)*100));
@@ -1260,6 +1318,69 @@ function shareDo(how){
   else url='mailto:?subject='+encodeURIComponent(it.subject)+'&body='+encodeURIComponent(txt.replace(/\*/g,''));
   setTimeout(()=>{if(how==='whatsapp'&&!isMobile)window.open(url,'_blank');else location.href=url;},shareRes?400:0);
 }
+
+
+// ---- Sensor test (admin): diagnose without restarting ----
+let diagFixUs=0,diagFixSensor=0;
+function diagVerdict(r){
+  const cur=r.results.find(x=>x.us===r.current)||r.results[0],best=r.results.slice().sort((a,b)=>b.hits-a.hits)[0];
+  const total=r.results.reduce((a,x)=>a+x.hits,0);
+  if(r.idleHigh>=15)return ['bad','The echo line is stuck HIGH at rest.',
+    `Check that the sensor's TX goes to ${r.echo} and RX to ${r.trig} (not swapped), that its "5V" pin is on 3V3, and that the sensor board is in trigger/echo mode (position R19 empty). A short from ${r.echo} to 3V3 gives the same result.`,0];
+  if(!total)return ['bad','No echo at any trigger pulse.',
+    `Check, in this order: 3V3 and GND reach the sensor; ${r.trig} → sensor RX and ${r.echo} ← sensor TX; the probe cable is plugged into the sensor board; the probe points straight down at water between 20 cm and 4.5 m away. A damaged probe cable or a wet sensor board also stays silent.`,0];
+  if(cur.hits===0&&best.hits>=3)return ['warn',`Echoes only with a ${best.us} µs trigger pulse.`,
+    `This sensor ignores the current ${r.current} µs pulse. Use ${best.us} µs (Display & sensor → Sensor trigger pulse), or tap the button below.`,best.us];
+  if(cur.hits<5)return ['warn',`Unstable: ${cur.hits} of 5 echoes with the current pulse.`,
+    'Usually a loose jumper wire, a probe that sees the tank wall, pipes or the partition, a rough water surface (inlet running), or water closer than about 20 cm. Re-seat the wires and point the probe at open water.',0];
+  const spread=cur.max-cur.min;
+  if(spread>5)return ['warn',`Echoes vary by ${fmtL(spread)}.`,'Readings jump between objects: aim the probe at open water, away from walls, pipes and the inlet stream.',0];
+  return ['ok',`Working: ${fmtL(cur.median)} from the sensor.`,'The sensor and its wiring answer normally.',0];}
+function diagHtml(r){
+  const [cls,head,advice,fix]=diagVerdict(r);
+  const rows=r.results.map(x=>`<tr><td>${x.us} µs${x.us===r.current?' (current)':''}</td><td>${x.hits} / 5</td><td>${x.hits?fmtL(x.median):'–'}</td><td>${x.hits?fmtL(x.min)+' – '+fmtL(x.max):'–'}</td></tr>`).join('');
+  return {fix,html:`<p class="help" style="margin:0">${multi()?`<b>${esc(r.name)}</b> · `:''}TRIG ${r.trig} → sensor RX · ECHO ${r.echo} ← sensor TX · echo line high at rest: ${r.idleHigh} of 20</p>`+
+    `<div class="dverdict ${cls}">${head}</div><p class="help">${advice}</p>`+
+    `<table class="dtable"><tr><th>Trigger pulse</th><th>Echoes</th><th>Distance</th><th>Range</th></tr>${rows}</table>`};}
+async function runDiag(list){
+  if(!isAdmin()){openLogin();return;}
+  const m=$('diagModal');$('diagBody').innerHTML='<p class="help">Testing… about 2 seconds per sensor.</p>';$('diagFix').hidden=true;m.classList.add('show');
+  let out='';diagFixUs=0;
+  for(const i of list){try{
+      const r=await fetch('/api/diag',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({sensor:i,auth:token})});
+      if(r.status===403){$('diagBody').innerHTML='<p class="help">Admin login required.</p>';return;}
+      const j=await r.json(),d=diagHtml(j);out+=(out?'<hr style="border:0;border-top:1px solid var(--line);margin:14px 0">':'')+d.html;
+      if(d.fix&&!diagFixUs){diagFixUs=d.fix;diagFixSensor=i;}
+      $('diagBody').innerHTML=out;}
+    catch(e){out+=`<p class="help">Sensor ${i+1}: the device did not answer.</p>`;$('diagBody').innerHTML=out;}}
+  if(diagFixUs){$('diagFix').hidden=false;$('diagFix').textContent=`Use ${diagFixUs} µs trigger pulse`;}}
+$('diagFix').onclick=async()=>{const j=await post('/api/settings',{trigUs:diagFixUs});if(j.ok){formLoaded=false;runDiag([diagFixSensor]);}};
+function diagAll(){runDiag(SN().map((_,i)=>i));}
+
+// ---- Storage & history ----
+let storLoaded=false;
+const kbs=b=>b>=1048576?(b/1048576).toFixed(b>=10485760?0:1)+' MB':Math.round(b/1024)+' KB';
+const daysFor=(bytes,rs)=>bytes/rs*120/86400;
+function renderStorage(){const g=st.storage;if(!g)return;
+  const rs=g.recSize||8,days=daysFor(g.histCap,rs),n=SN().length;
+  $('stFlash').textContent=kbs(g.flash);$('stFs').textContent=g.fsTotal?kbs(g.fsTotal):'not available';
+  $('stHist').textContent=`${kbs(g.histCap)} (${g.histPct||60} %)`;
+  $('stDays').textContent=(days>=60?`${Math.round(days/30)} months`:`${Math.round(days)} days`)+` with ${n} sensor${n>1?'s':''}`;
+  $('stBar').style.width=Math.min(100,g.fsTotal?g.fsUsed/g.fsTotal*100:0).toFixed(1)+'%';
+  $('stUse').textContent=`${kbs(g.fsUsed)} of ${kbs(g.fsTotal)} used · history now ${kbs(g.histBytes)} (about ${Math.round(daysFor(g.histBytes,rs))} days recorded)`;
+  if(!storLoaded){storLoaded=true;$('inHistPct').value=String(g.histPct||0);}
+  // Advice for this chip: how far the storage could go, and which setting gets there
+  const adv=[],fsMB=g.fsTotal/1048576,est=fs=>Math.round(daysFor(Math.max(40320,fs*0.6-32768),rs));
+  if(!g.fsTotal)adv.push('No data storage partition: history is lost on restart. ESP32: Tools → Partition Scheme → Default 4MB with spiffs. NodeMCU: Flash Size 4MB (FS:2MB OTA:~1019KB).');
+  else if(st.boardTag==='esp32'&&fsMB<0.5){
+    adv.push(`This partition scheme leaves ${kbs(g.fsTotal)} for data. <b>Default 4MB with spiffs</b> gives 1.5 MB: about ${est(1507328)} days of history.`);
+    adv.push(g.sketch<1300000?`The firmware (${kbs(g.sketch)}) fits its 1.2 MB app slot, with updates over Wi-Fi. Changing the scheme needs one USB upload and starts the history fresh.`
+      :`The firmware (${kbs(g.sketch)}) is too big for its 1.2 MB app slot: keep this scheme, or use an 8 MB board with "8M with spiffs".`);}
+  else if(st.boardTag==='esp32'&&g.flash>=8388608&&fsMB<3)adv.push(`This board has ${kbs(g.flash)} of flash. A custom partition table with a larger "spiffs" area keeps much more history.`);
+  else if(st.boardTag==='esp8266'&&fsMB<1.5)adv.push(`More history: Tools → Flash Size → <b>4MB (FS:2MB OTA:~1019KB)</b> gives 2 MB, about ${est(2072576)} days.`);
+  else adv.push(`This is the best layout for this ${kbs(g.flash)} chip: about ${est(g.fsTotal)} days with the automatic share. A larger share keeps more days but leaves less room for the log.`);
+  setAlert($('stAdvice'),'info',adv.join('<br>'));}
+async function saveStorage(){const j=await post('/api/settings',{histPct:$('inHistPct').value});if(j.ok){storLoaded=false;poll();}}
 
 // ---- Site identity ----
 const siteSet=()=>st&&st.site&&(st.site.org||st.site.building||st.site.tank);
@@ -1464,7 +1585,7 @@ window.addEventListener('hashchange',()=>showTab(location.hash.slice(1)));
 
 // ================= Analytics =================
 let hist=[],fills=[],aLoaded=false,rangeH=24,ana=null;
-let histAll=[],fillsAll=[],viewSel='total';
+let histAll=[],fillsAll=[],viewSel='total',loadedDays=0;
 // The analytics view: one compartment, or the whole tank on a 0..1000 scale (litres-weighted when every
 // compartment has a capacity). spanMm / pctOf / lpm and the leak limit follow the view.
 let AV={empty:120,full:25,capacity:0,leakMm:15,label:''};
@@ -1514,9 +1635,13 @@ const tLbl=t=>new Date(t*1000).toLocaleString([], {weekday:'short',hour:'2-digit
 function startOfDay(t){const d=new Date(t*1000);d.setHours(0,0,0,0);return d.getTime()/1000;}
 function median(a){if(!a.length)return null;const s=a.slice().sort((x,y)=>x-y);return s[s.length>>1];}
 
-async function loadAnalytics(){
+// days: how much history to fetch (Infinity = everything stored); the device sends only newer records.
+// Repeated refreshes keep at least what is already loaded.
+async function loadAnalytics(days){
+  days=Math.max(days||0,15,loadedDays||0);
   try{
-    const [hb,fb]=await Promise.all([fetch('/api/history',{cache:'no-store'}).then(r=>r.arrayBuffer()),
+    const since=days===Infinity?0:Math.floor(Date.now()/1000-days*86400);
+    const [hb,fb]=await Promise.all([fetch('/api/history'+(since?'?since='+since:''),{cache:'no-store'}).then(r=>r.arrayBuffer()),
                                      fetch('/api/fills',{cache:'no-store'}).then(r=>r.arrayBuffer())]);
     // History record: time, one distance (mm) per sensor, flags (bit i = sensor i filling). 8 bytes with one sensor.
     const n=SN().length,rs=6+2*n,dv=new DataView(hb);histAll=[];
@@ -1528,7 +1653,7 @@ async function loadAnalytics(){
     const fs=st.sensors?16:12,fv=new DataView(fb);fillsAll=[];
     for(let o=0;o+fs<=fb.byteLength;o+=fs)fillsAll.push({s:fv.getUint32(o,true),e:fv.getUint32(o+4,true),
       smm:fv.getUint16(o+8,true),emm:fv.getUint16(o+10,true),sensor:fs===16?fv.getUint8(o+12):0});
-    setView();aLoaded=true;
+    setView();aLoaded=true;loadedDays=days;
   }catch(e){aLoaded=false;}
   if(st)renderAnalytics();
 }
@@ -1580,28 +1705,32 @@ function css(v){return getComputedStyle(document.documentElement).getPropertyVal
 
 function levelChart(box){
   box.innerHTML='';const W=Math.max(300,box.clientWidth),H=Math.round(Math.min(280,Math.max(190,W*0.32)));
-  const L=36,Rr=10,T=10,B=26,end=nowT(),start=end-rangeH*3600;
+  const firstT=hist.length?hist[0].t:nowT()-86400,hours=rangeH>0?rangeH:Math.max(24,Math.ceil((nowT()-firstT)/3600));
+  const L=36,Rr=10,T=10,B=26,end=nowT(),start=end-hours*3600,long=hours>336;
   const x=t=>L+(t-start)/(end-start)*(W-L-Rr),y=p=>T+(100-p)/100*(H-T-B);
   const svg=el('svg',{viewBox:`0 0 ${W} ${H}`},box);
-  // night bands
-  for(let d=startOfDay(start)-DAY;d<=end;d+=DAY){
+  // night bands (not on long ranges, where they would cover the chart)
+  if(!long)for(let d=startOfDay(start)-DAY;d<=end;d+=DAY){
     let s=d+st.nightStart*3600,e=d+st.nightEnd*3600;if(e<=s)e+=DAY;
     const a=Math.max(s,start),b=Math.min(e,end);if(b>a)el('rect',{x:x(a),y:T,width:x(b)-x(a),height:H-T-B,fill:'rgba(100,116,139,.16)'},svg);}
   // fill bands
-  for(const f of allFills()){const a=Math.max(f.s,start),b=Math.min(f.e,end);
+  if(hours<=744)for(const f of allFills()){const a=Math.max(f.s,start),b=Math.min(f.e,end);
     if(b>a)el('rect',{x:x(a),y:T,width:Math.max(2,x(b)-x(a)),height:H-T-B,fill:'rgba(22,163,74,.22)'},svg);}
   // grid
   for(const p of [0,25,50,75,100]){el('line',{x1:L,x2:W-Rr,y1:y(p),y2:y(p),class:'grid'},svg);
     el('text',{x:L-6,y:y(p)+4,'text-anchor':'end',class:'axis'},svg).textContent=p+'%';}
   // x ticks
-  const step=rangeH<=24?(W<500?6:3)*3600:DAY;
-  let t0=rangeH<=24?Math.ceil(start/step)*step:startOfDay(start)+DAY;
-  if(rangeH<=24){const d=new Date(start*1000);d.setMinutes(0,0,0);t0=d.getTime()/1000;while(t0<start||new Date(t0*1000).getHours()%(step/3600))t0+=3600;}
+  const step=hours<=24?(W<500?6:3)*3600:hours<=336?DAY:hours<=2160?DAY*(W<500?14:7):DAY*30;
+  let t0=hours<=24?Math.ceil(start/step)*step:startOfDay(start)+DAY;
+  if(hours<=24){const d=new Date(start*1000);d.setMinutes(0,0,0);t0=d.getTime()/1000;while(t0<start||new Date(t0*1000).getHours()%(step/3600))t0+=3600;}
   for(let t=t0;t<=end;t+=step){el('line',{x1:x(t),x2:x(t),y1:T,y2:H-B,class:'grid','stroke-dasharray':'2 3'},svg);
-    el('text',{x:x(t),y:H-8,'text-anchor':'middle',class:'axis'},svg).textContent=rangeH<=24?hh(new Date(t*1000).getHours()):dayLbl(t);}
+    el('text',{x:x(t),y:H-8,'text-anchor':'middle',class:'axis'},svg).textContent=hours<=24?hh(new Date(t*1000).getHours()):
+      hours<=336?dayLbl(t):new Date(t*1000).toLocaleDateString([],{day:'numeric',month:'short'});}
   // line + area, broken at gaps
-  const pts=hist.filter(r=>r.t>=start-300&&r.t<=end);let seg=[],segs=[];
-  for(const r of pts){if(r.mm===null||(seg.length&&r.t-seg[seg.length-1].t>600)){if(seg.length)segs.push(seg);seg=[];}if(r.mm!==null)seg.push(r);}
+  // long ranges: keep at most about 1,500 points so the chart stays quick
+  const inR=hist.filter(r=>r.t>=start-300&&r.t<=end),k=Math.max(1,Math.ceil(inR.length/1500)),gap=Math.max(600,k*360);
+  const pts=k>1?inR.filter((r,i)=>i%k===0):inR;let seg=[],segs=[];
+  for(const r of pts){if(r.mm===null||(seg.length&&r.t-seg[seg.length-1].t>gap)){if(seg.length)segs.push(seg);seg=[];}if(r.mm!==null)seg.push(r);}
   if(seg.length)segs.push(seg);
   const acc=css('--accent');
   for(const s of segs){const d=s.map((r,i)=>(i?'L':'M')+x(r.t).toFixed(1)+','+y(pctOf(r.mm)).toFixed(1)).join('');
@@ -1613,7 +1742,7 @@ function levelChart(box){
   const cur=el('line',{y1:T,y2:H-B,stroke:css('--muted'),'stroke-width':1,visibility:'hidden'},svg);
   const move=ev=>{const rc=svg.getBoundingClientRect(),px=(ev.clientX-rc.left)*W/rc.width,t=start+(px-L)/(W-L-Rr)*(end-start);
     let best=null;for(const r of pts)if(r.mm!==null&&(!best||Math.abs(r.t-t)<Math.abs(best.t-t)))best=r;
-    if(!best||Math.abs(best.t-t)>1800){tip.style.display='none';cur.setAttribute('visibility','hidden');return;}
+    if(!best||Math.abs(best.t-t)>Math.max(1800,gap)){tip.style.display='none';cur.setAttribute('visibility','hidden');return;}
     const X=x(best.t);cur.setAttribute('x1',X);cur.setAttribute('x2',X);cur.setAttribute('visibility','visible');
     tip.textContent=`${tLbl(best.t)} · ${pctOf(best.mm).toFixed(0)}%${best.fill?' · filling':''}`;
     tip.style.left=(X/W*100)+'%';tip.style.display='block';};
@@ -1694,8 +1823,11 @@ function renderAnalytics(){
   if(leakRow&&leakRow.status==='bad'&&now-leakRow.end<DAY)setAlert(lb,'bad',`Possible leak last night: level dropped ${amt(leakRow.drop)} between ${hh(st.nightStart)} and ${hh(st.nightEnd)}. <a href="#analytics">See analytics</a>`);
   else setAlert(lb,'','');
 }
-document.querySelectorAll('#rangeSeg button').forEach(b=>b.onclick=()=>{rangeH=+b.dataset.h;
-  document.querySelectorAll('#rangeSeg button').forEach(x=>x.classList.toggle('on',x===b));levelChart($('levelChart'));});
+document.querySelectorAll('#rangeSeg button').forEach(b=>b.onclick=async()=>{rangeH=+b.dataset.h;
+  document.querySelectorAll('#rangeSeg button').forEach(x=>x.classList.toggle('on',x===b));
+  const need=rangeH===0?Infinity:rangeH/24+1;
+  if(need>loadedDays){$('levelChart').innerHTML='<p class="help" style="padding:20px">Loading history…</p>';await loadAnalytics(need);}
+  levelChart($('levelChart'));});
 let rsz;window.addEventListener('resize',()=>{clearTimeout(rsz);rsz=setTimeout(()=>{if(aLoaded&&st)renderAnalytics();},200);});
 
 for(let i=0;i<24;i++){$('inNs').add(new Option(hh(i),i));$('inNe').add(new Option(hh(i),i));}
@@ -1705,7 +1837,7 @@ async function saveAnalytics(){
   const j=await post('/api/settings',{capacity:$('inCap').value||0,fillCm:cmIn('inFillCm').toFixed(2),nightStart:$('inNs').value,nightEnd:$('inNe').value,leakCm:cmIn('inLeak').toFixed(2)});
   if(j.ok){formLoaded=false;await poll();renderAnalytics();}}
 async function clearHistory(){if(!await ask('Clear all tank history and recorded fills? This cannot be undone.'))return;
-  await post('/api/history/clear');loadAnalytics();}
+  await post('/api/history/clear');loadedDays=0;loadAnalytics();}
 
 // ================= PDF report (written directly in the browser, no libraries) =================
 const BRAND={site:'woodyouloveit.com',url:'https://woodyouloveit.com',owner:'Chanchal Sakarde',year:'2026',

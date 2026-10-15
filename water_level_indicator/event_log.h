@@ -28,6 +28,12 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 #if defined(ESP32)
+  #include <esp_task_wdt.h>
+  #define WTMS_WDT_FEED() esp_task_wdt_reset()     // long transfers keep the hang watchdog fed
+#else
+  #define WTMS_WDT_FEED() yield()
+#endif
+#if defined(ESP32)
 #include <esp_log.h>
 #endif
 
@@ -112,6 +118,24 @@ size_t fileSize(const char* path) {
 }
 
 // Streams files one after another (older first) without building them in RAM. Binary-safe.
+// Flash storage (LittleFS) size and use, in bytes
+size_t fsTotalBytes() {
+  if (!logFsOK) return 0;
+#if defined(ESP32)
+  return LittleFS.totalBytes();
+#else
+  FSInfo i; LittleFS.info(i); return i.totalBytes;
+#endif
+}
+size_t fsUsedBytes() {
+  if (!logFsOK) return 0;
+#if defined(ESP32)
+  return LittleFS.usedBytes();
+#else
+  FSInfo i; LittleFS.info(i); return i.usedBytes;
+#endif
+}
+
 template <class Server>
 void streamFiles(Server& server, const char* const* files, int nFiles, const char* type, const char* downloadName) {
   size_t total = 0;
@@ -129,6 +153,7 @@ void streamFiles(Server& server, const char* const* files, int nFiles, const cha
       size_t n = f.readBytes(buf, sizeof(buf));
       if (!n) break;
       server.sendContent(buf, n);
+      WTMS_WDT_FEED();
     }
     f.close();
   }

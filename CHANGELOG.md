@@ -7,6 +7,27 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-10-15
+
+### Added
+- **Chained LED strips, one per compartment, in zig-zag:** *Strips mounted* → Zig-zag (strip 1 up, strip 2 down, strip 3 up, so every DOUT is beside the next DIN) or All start at the bottom. Each strip shows its level bottom-up whichever way it is wired; *Strip mounted top-down* flips all strips. New `ledChain` in `/api/sensors` and `/api/status`.
+- **LEDs per strip** in Sensors & compartments for chained strips; the dashboard sets the total (strips × LEDs, max 300).
+- Wiring diagrams: ESP32 with three chained strips and NodeMCU with two, with 5V and GND to every strip.
+
+### Changed
+- The hotspot indicator (blinking blue) is the top LED of the last strip.
+
+## [3.1.0] - 2026-10-15
+
+### Added
+- **Self-healing:** after 2 min without an echo the sensor's pins are re-initialised; after a configurable time (off, 10 min to 4 h, default 30 min) the board restarts, logged with the sensor and duration. At most 3 restarts in a row, then once a day until the sensors answer (no restart loop with a broken wire). Counter kept in EEPROM (offset 176); "Started after a self-healing restart" is logged at boot.
+- **ESP32 hang watchdog:** the task watchdog restarts the board if the main loop stops for 30 s (long file transfers keep it fed).
+- **Sensor test** (admin, no restart): `POST /api/diag` re-initialises a sensor, checks the echo line at rest and pings with the current, 20, 50, 200 and 500 µs trigger pulses. The dashboard shows a verdict (working, unstable, needs another pulse, no echo, echo stuck high) with the fix, and can apply a better pulse in one tap. Linked from the sensor-fault message.
+- **History sized to the chip:** the two rotating history files take a share of the flash storage (automatic 60 %, or 30/45/75 %) instead of a fixed 80 KB: about 5 months with one sensor on the ESP32 Default partition scheme. Never fills the storage (the older file is dropped below 16 KB free).
+- **Storage & history** card: flash chip, storage, history space, days kept, use bar, and advice on the best partition scheme for the chip.
+- `/api/history?since=<unix time>` sends only newer records (binary search), so the dashboard loads 15 days by default and 30 days, 90 days or **All** on request; long ranges are thinned to about 1,500 points with date labels. CSV export includes everything stored.
+- `/api/status` adds `heal` and `storage`; `/api/settings` accepts `heal` and `histPct`.
+
 ### Added (Android app 1.3.0)
 - **First-start screen** while no tank is saved: the woodyouloveit.com logo, an animated save-water mascot drawn in code (`SaveWaterView`: a smiling water drop that bounces, blinks, holds moving waves and sends up hearts, with twinkling sparkles), a pulsing "Every drop counts", water-saving tips that change every few seconds, and the buttons *Set up my first tank* and *Find tanks on this Wi-Fi*. Animation runs only while on screen and stops when the phone's animations are turned off.
 
@@ -320,7 +341,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - `STRIP_REVERSED` option for strips mounted top-down.
 - Startup sweep animation.
 
-[Unreleased]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v3.1.0...v3.2.0
+[3.1.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.12.0...v3.0.0
 [2.12.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.11.0...v2.12.0
 [2.11.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.10.1...v2.11.0

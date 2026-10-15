@@ -24,7 +24,8 @@
 //
 //  /hist.bin    one record every 2 minutes: time, distance (mm) per sensor, flags (bit i = sensor i filling)
 //               record size 4 + 2*n + 2 bytes (8 bytes for one sensor, the same layout as before 3.0.0)
-//               two files of about 40 KB each: 14 days with 1 sensor, 11 with 2, 8 with 4
+//               two rotating files sized from the flash storage (default 60 % of it, see histAllocate):
+//               the oldest half is dropped when both are full, so the newest data is always kept
 //  /fill2.bin   one record per detected fill: start, end, start/end distance, sensor (16 bytes)
 //               two files of 100 records
 //
@@ -39,7 +40,7 @@
 String sensorWho(int i);                          // "<name>: " for log lines (defined in the sketch)
 #define HIST_FILE      "/hist.bin"
 #define HIST_OLD       "/hist.old.bin"
-#define HIST_FILE_BYTES 40320              // per file (5040 records of 8 bytes)
+#define HIST_FILE_MIN   20160              // smallest file: 2,520 records of 8 bytes (3.5 days)
 #define FILL_FILE      "/fill2.bin"
 #define FILL_OLD       "/fill2.old.bin"
 #define FILL_V1_FILE   "/fills.bin"        // before 3.0.0: 12-byte records, one sensor
@@ -54,9 +55,23 @@ struct FillRecV1 { uint32_t start; uint32_t end; uint16_t startMm; uint16_t endM
 struct FillRec   { uint32_t start; uint32_t end; uint16_t startMm; uint16_t endMm; uint8_t sensor; uint8_t pad[3]; };
 
 uint8_t histSensors = 1;                          // sensors per history record (set from the configuration)
+uint32_t histFileBytes = 40320;                   // size of each of the two history files
+uint8_t  histPctUsed = 60;                        // share of the flash storage given to history
+
+// Size the history from the storage on this chip: pct % of it (0 = automatic, 60 %),
+// minus room for the log (24 KB), the fill records and headroom, split over the two rotating files
+void histAllocate(uint8_t pct) {
+  histPctUsed = pct ? pct : 60;
+  long budget = (long)(fsTotalBytes() / 100 * histPctUsed) - 32L * 1024;
+  long per = budget / 2;
+  if (per < HIST_FILE_MIN) per = HIST_FILE_MIN;
+  histFileBytes = (uint32_t)per;
+}
 
 void appendRec(const char* path, const char* old, const void* rec, size_t size, size_t maxRecs) {
   if (!logFsOK) return;
+  // Never fill the storage: with less than 16 KB free, drop the older file first
+  if (fsTotalBytes() - fsUsedBytes() < 16384 && LittleFS.exists(old)) LittleFS.remove(old);
   File f = LittleFS.open(path, "a");
   if (!f) return;
   f.write((const uint8_t*)rec, size);
@@ -226,7 +241,7 @@ void historyTask(const float* dist) {
       if (fd[i].filling) flags |= (1 << i);
     }
     memcpy(rec + 4 + 2 * n, &flags, 2);
-    appendRec(HIST_FILE, HIST_OLD, rec, size, HIST_FILE_BYTES / size);
+    appendRec(HIST_FILE, HIST_OLD, rec, size, histFileBytes / size);
   }
   for (int i = 0; i < WTMS_MAX_SENSORS; i++) { hacc.sum[i] = 0; hacc.n[i] = 0; }
 }

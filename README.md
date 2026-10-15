@@ -128,7 +128,15 @@ A partitioned tank gets one sensor per compartment. The pins are fixed by the fi
 |---|---|
 | Whole tank, one bar | The combined level (litres-weighted when every compartment has a capacity) |
 | Split strip, one bar each | One strip divided into a bar per compartment, sensor 1 at the bottom, with a dark LED between bars |
-| One strip per compartment | Strips chained DOUT → DIN, set the total LED count; each strip shows one compartment |
+| One strip per compartment | Separate strips side by side, chained DOUT → DIN on the same data pin; strip 1 shows sensor 1, strip 2 sensor 2, … |
+
+**Chained strips, one per compartment** (e.g. 3 sensors → 3 strips of the same length, side by side):
+
+1. Data: ESP32 G16 (NodeMCU D2) → 330 Ω → strip 1 DIN. Then **zig-zag**: strip 1 runs up, its DOUT (top) → strip 2 DIN (top), strip 2 runs down, its DOUT (bottom) → strip 3 DIN (bottom), and so on. Each DOUT sits next to the next DIN, so the links are short.
+2. Power: feed **5V and GND to every strip** from the 5V supply, all grounds joined.
+3. Setup → Sensors & compartments: *LED strip shows* → **One strip per compartment**, **LEDs per strip** (the total is worked out, up to 300), *Strips mounted* → **Zig-zag** (or *All start at the bottom* if every strip's DIN is at its bottom).
+
+Every strip shows its level from the bottom up, whichever way it is wired. *Strip mounted top-down* (Display & sensor) flips all strips.
 
 ### Why the extra parts
 
@@ -321,6 +329,30 @@ On a shallow tank, 1 cm of water is about 2.5% of the tank (≈ 6 L in a 225 L l
 - **Whole tank** = litres of all compartments added up when every compartment has a capacity, otherwise the average level.
 - **Alarms** (low water, sensor fault, filling) name the compartment.
 - Upgrading from 2.x: the existing calibration and capacity become sensor 1, and the history stays.
+
+## Self-healing, sensor test and hang watchdog (firmware 3.1.0)
+
+| Feature | What happens |
+|---|---|
+| No echo for 2 minutes | The sensor's pins are re-initialised (fixes many glitches, no restart); logged |
+| No echo for the set time | The board restarts, logged with the sensor and the time. Setup → Sensors & compartments → *Self-healing restart*: off, 10 min … 4 h, **30 min recommended** |
+| Restart-loop guard | At most 3 self-healing restarts in a row; then once a day until every sensor answers again (a broken wire is not fixed by restarting) |
+| Main loop hangs (ESP32) | The task watchdog restarts the board after 30 s; the log shows "Watchdog" as the restart cause. The ESP8266 has this built in |
+| **Test sensor** (admin) | Setup → Sensors & compartments → *Test* (or the link in the sensor-fault message): re-initialises the sensor, checks the echo line at rest, pings 5 times with the current trigger pulse and with 20, 50, 200 and 500 µs, and gives a verdict with the fix. If another pulse works, one tap applies it. No restart |
+
+## History storage and retention (firmware 3.1.0)
+
+History is kept permanently in the chip's flash storage, in two rotating files: when the space is full, the oldest part is dropped and the newest kept.
+Its space is sized from the actual storage (Setup → **Storage & history**): automatic (60 %, recommended) or 30, 45 or 75 %.
+
+| Board and setting | Data storage | History, 1 sensor | 2 sensors |
+|---|---|---|---|
+| ESP32, *Minimal SPIFFS* | 190 KB | about 2 weeks | about 10 days |
+| ESP32, *Default 4MB with spiffs* (recommended) | 1.5 MB | about 5 months | about 4 months |
+| NodeMCU, *4MB (FS:2MB)* | 2 MB | about 7 months | about 5 months |
+
+The card shows the flash chip, the storage, the history space, how many days it keeps, and advice on the best partition for this chip.
+The dashboard downloads only what it shows (15 days by default; 30 days, 90 days or **All** on request), so months of history stay quick to open.
 
 ## How it works
 
