@@ -1,4 +1,5 @@
 import java.util.Properties
+import java.security.MessageDigest
 
 // Water Tanks Monitor System - Android app module
 // Copyright (C) 2026 Chanchal Sakarde - woodyouloveit.com
@@ -58,7 +59,7 @@ val bundleFirmware by tasks.registering {
         val entries = best.map { (board, vf) ->
             val name = "wtms-$board-${vf.first}.bin"
             vf.second.copyTo(outDir.resolve(name), overwrite = true)
-            val sha = java.security.MessageDigest.getInstance("SHA-256").digest(vf.second.readBytes()).joinToString("") { "%02x".format(it) }
+            val sha = MessageDigest.getInstance("SHA-256").digest(vf.second.readBytes()).joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
             "{\"board\":\"$board\",\"version\":\"${vf.first}\",\"file\":\"$name\",\"size\":${vf.second.length()},\"sha256\":\"$sha\"}"
         }
         outDir.resolve("manifest.json").writeText("[" + entries.joinToString(",") + "]")
