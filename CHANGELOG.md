@@ -7,6 +7,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-10-17
+
+### Added
+- **Manufacturer service login** (second role): set at build time by `tools/new-service-key.ps1/.bat`, which writes `service_secret.h` (salted SHA-256 hash only, in `.gitignore`). Same challenge-response login as admin (`/api/auth?role=service`); a service session can do everything an admin can. Without the file there is no service login (no default password).
+- **Firmware updates need the service login** (`/api/ota`); admins see that the manufacturer does updates. `/api/status` adds `auth.service` and `auth.serviceAvailable`.
+- Dashboard: login window offers Admin or Service (manufacturer); the Firmware update card is service-only.
+- **Android app 1.4.0: field firmware updates.** *Firmware update (service)* from a tank's menu or the dashboard menu: service login, bundled firmware (newest per board, SHA-256 checked) or a `.bin` from the phone, board / size / version checks, upload with progress (screen kept on), wait for the restart, and a check that site names, sensors and calibration were kept.
+- **Firmware bundled in the app:** a Gradle step packs every exported firmware found in `firmware/*.bin` or the sketch's `build` folder, identified by its version/board marker, with a manifest.
+
+### Fixed
+- Android build: `import java.util.Properties` moved to the top of `app/build.gradle.kts` (Kotlin scripts need imports before `plugins { }`).
+
 ## [3.2.0] - 2026-10-15
 
 ### Added
@@ -341,7 +353,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - `STRIP_REVERSED` option for strips mounted top-down.
 - Startup sweep animation.
 
-[Unreleased]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v3.3.0...HEAD
+[3.3.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/ChanchalSakardeQH/WATERTANK-LEVEL-INDICATOR-with-Dashboard/compare/v2.12.0...v3.0.0

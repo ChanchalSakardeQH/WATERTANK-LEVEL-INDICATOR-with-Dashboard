@@ -7,6 +7,7 @@ Native Android app for the Water Tanks Monitor System by [woodyouloveit.com](htt
 
 | Feature | Details |
 |---|---|
+| Firmware update (service) | For the manufacturer: from a tank's menu or the dashboard menu. Service login, then the firmware bundled in the app (newest per board) or a `.bin` file; board, size and version are checked, the upload shows progress, and after the restart the app confirms the new version and that site names, sensors and calibration were kept. See the main README, *Field firmware updates* |
 | First start | While no tank is saved: an animated save-water mascot (a smiling water drop that bounces, blinks and sends up hearts), the woodyouloveit.com logo, a pulsing "Every drop counts" and rotating water-saving tips, with *Set up my first tank* and *Find tanks on this Wi-Fi*. Still when the phone's animations are off |
 | Compartments | Tanks with several sensors (firmware 3.0.0) show the whole tank plus a bar per compartment; alerts name the compartment |
 | Admin login | Per tank, in the dashboard menu: logs in with the tank's own admin password (challenge, the password is never sent), asks for a new password on a tank still using the default, and unlocks Setup and Log in the dashboard. Only the session token is kept; it is checked against the tank every time and dropped after the tank restarts or 12 h without use. Viewers without the password see Overview and Analytics only |
@@ -69,6 +70,7 @@ build-android.bat -Task Debug -NoAutoFix                :: report problems only,
 | Release key | `<Android folder>\Keys\wtms-release.jks`. A key made by the earlier script in `%USERPROFILE%\.woodyouloveit` is used if it is there: **back it up with its password**, Google Play only accepts updates signed with the same key |
 | App version | `android\version.properties` (`versionName`, `versionCode`); the menu asks for a new one before a release |
 | Debug build | Installs beside the release app as **WTMS Debug** (`com.woodyouloveit.wtms.debug`) |
+| Bundled firmware | Exported `.bin` files in `firmware\` (or the sketch's `build` folder) are packed into the app on every build; the build log lists them |
 | Outputs | `release\android\<version>\woodyouloveit-wtms-<version>-debug.apk`, `-release.apk`, `-release.aab`, `SHA256SUMS.txt`; logs in `release\logs\` |
 
 **It sets itself up:** with your permission (or `-Yes`) it installs a missing Java 21, the Android SDK command-line tools,

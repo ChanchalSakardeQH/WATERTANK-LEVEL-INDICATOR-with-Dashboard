@@ -74,11 +74,18 @@ class TankApi(private val ctx: Context, address: String) {
     /** Full /api/status as JSON (for the Wi-Fi state during setup). */
     suspend fun statusJson(timeoutMs: Int = 5000): JSONObject = get("/api/status" + if (token.isNotEmpty()) "?auth=$token" else "", timeoutMs)
 
-    suspend fun login(password: String) {
-        val challenge = get("/api/auth")
+    /** "admin" or "service" after a successful login. */
+    var role = ""
+        private set
+
+    /** role "service": the manufacturer's service login (firmware 3.3.0+), needed for firmware updates. */
+    suspend fun login(password: String, asRole: String = "admin") {
+        val challenge = get(if (asRole == "service") "/api/auth?role=service" else "/api/auth")
+        if (!challenge.has("salt")) throw ApiError(challenge.optString("message", "This tank has no $asRole login"))
         val proof = sha256(challenge.getString("nonce") + sha256(challenge.getString("salt") + password))
         val r = post("/api/login", mapOf("proof" to proof))
         token = r.optString("token")
+        role = r.optString("role", asRole)
         mustChangePassword = r.optBoolean("mustChange", false)
         if (token.isEmpty()) throw ApiError(r.optString("message", "Login failed"))
     }

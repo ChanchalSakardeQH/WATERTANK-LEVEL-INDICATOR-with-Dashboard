@@ -21,7 +21,7 @@
 */
 
 /*
-  Water Tanks Monitor System (WTMS)                        firmware 3.2.0
+  Water Tanks Monitor System (WTMS)                        firmware 3.3.0
   ESP32 DevKit or ESP8266 NodeMCU + AJ-SR04M / JSN-SR04T + WS2812B strip (1-300 LEDs, set in the dashboard)
 
   - Each device is named in the dashboard: society / organisation, building, tank.
@@ -101,7 +101,7 @@
 #include "auth.h"
 #include "history.h"
 
-#define FW_VERSION  "3.2.0"
+#define FW_VERSION  "3.3.0"
 #define PRODUCT     "Water Tanks Monitor System"
 #define DEFAULT_LEDS 30
 #define MAX_LEDS     300
@@ -1159,10 +1159,13 @@ void handleStatus() {
   j += ",\"median\":";      j += String(medianSize());
   j += ",\"live\":";        j += liveUntil && millis() < liveUntil ? "true" : "false";
   j += "}";
-  bool admin = authIsAdmin(server);
+  const uint8_t role = authRole(server);
+  bool admin = role >= ROLE_ADMIN;
   if (admin && server.hasArg("live")) liveUntil = millis() + LIVE_HOLD_MS;   // Setup tab open: read faster
   j += ",\"auth\":{\"admin\":"; j += admin ? "true" : "false";
-  j += ",\"mustChange\":";   j += admin && auth.mustChange ? "true" : "false";
+  j += ",\"service\":";      j += role == ROLE_SERVICE ? "true" : "false";
+  j += ",\"serviceAvailable\":"; j += SERVICE_AVAILABLE ? "true" : "false";
+  j += ",\"mustChange\":";   j += role == ROLE_ADMIN && auth.mustChange ? "true" : "false";
   j += "}";
   j += ",\"filling\":";      j += anyFilling(sens.count) ? "true" : "false";
   j += ",\"fillRate\":";     j += String(fd[fi].filling ? fd[fi].rateMmMin / 10.0 : 0.0, 2);
@@ -1615,21 +1618,28 @@ void handleLogClear() {
   logWrite('I', "sys", "Log cleared from dashboard");
   sendResult(true, "Log cleared");
 }
-void handleAuth() {                       // salt + one-time nonce for the login challenge
+void handleAuth() {                       // salt + one-time nonce for the login challenge (?role=service: service login)
+  const bool service = server.arg("role") == "service";
+  if (service && !SERVICE_AVAILABLE) return sendResult(false, "This firmware has no service login");
   authNonce = randomHex(16);
   authNonceAt = millis();
-  sendJson(200, "{\"salt\":\"" + authSaltHex() + "\",\"nonce\":\"" + authNonce + "\"}");
+  authNonceRole = service ? ROLE_SERVICE : ROLE_ADMIN;
+  sendJson(200, "{\"salt\":\"" + (service ? String(SERVICE_SALT) : authSaltHex()) + "\",\"nonce\":\"" + authNonce +
+                "\",\"role\":\"" + (service ? "service" : "admin") + "\"}");
 }
 void handleLogin() {
+  const uint8_t role = authNonceRole;
+  const char* who = role == ROLE_SERVICE ? "Service" : "Admin";
   String err = authCheckProof(server.arg("proof"));
   if (err.length()) {
-    logWrite('W', "sys", "Admin login failed: " + err);
+    logWrite('W', "sys", String(who) + " login failed: " + err);
     return sendResult(false, err);
   }
-  String t = authNewSession();
-  logWrite('I', "sys", "Admin logged in");
-  sendJson(200, String("{\"ok\":true,\"message\":\"Logged in\",\"token\":\"") + t +
-                "\",\"mustChange\":" + (auth.mustChange ? "true" : "false") + "}");
+  String t = authNewSession(role);
+  logWrite('I', "sys", String(who) + " logged in");
+  sendJson(200, String("{\"ok\":true,\"message\":\"Logged in\",\"token\":\"") + t + "\",\"role\":\"" +
+                (role == ROLE_SERVICE ? "service" : "admin") + "\",\"mustChange\":" +
+                (role == ROLE_ADMIN && auth.mustChange ? "true" : "false") + "}");
 }
 void handleLogout() {
   authEndSession(server.arg("auth"));
@@ -1657,8 +1667,8 @@ void handleOtaUpload() {
   if (up.status == UPLOAD_FILE_START) {
     otaError = "";
     otaBytes = 0;
-    otaAllowed = authIsAdmin(server);            // token is in the URL (?auth=...)
-    if (!otaAllowed) { otaError = "Admin login required"; return; }
+    otaAllowed = authIsService(server);          // manufacturer only; token is in the URL (?auth=...)
+    if (!otaAllowed) { otaError = "Firmware updates need the manufacturer's service login"; return; }
     logWrite('I', "sys", "Firmware update started: " + up.filename);
 #if defined(ESP32)
     if (!Update.begin(UPDATE_SIZE_UNKNOWN)) otaError = OTA_ERR();
@@ -1685,7 +1695,7 @@ void handleOtaUpload() {
   }
 }
 void handleOtaDone() {
-  if (!otaAllowed) return sendJson(403, "{\"ok\":false,\"auth\":false,\"message\":\"Admin login required\"}");
+  if (!otaAllowed) return sendJson(403, "{\"ok\":false,\"auth\":false,\"service\":false,\"message\":\"Firmware updates need the manufacturer's service login\"}");
   if (otaError.length()) {
     logWrite('E', "sys", "Firmware update failed: " + otaError);
     return sendResult(false, "Update failed: " + otaError + ". The current firmware keeps running.");

@@ -289,7 +289,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun deviceMenu(d: Device) {
-        val items = arrayOf("Open dashboard", "Rename, address or remote address", "Open in browser", "Remove")
+        val items = arrayOf("Open dashboard", "Rename, address or remote address", "Open in browser", "Firmware update (service)", "Remove")
         MaterialAlertDialogBuilder(this)
             .setTitle(d.name.ifBlank { d.address })
             .setItems(items) { _, which ->
@@ -297,7 +297,10 @@ class MainActivity : AppCompatActivity() {
                     0 -> openDashboard(d)
                     1 -> addDialog(d)
                     2 -> try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(StatusClient.baseUrl(d.address)))) } catch (_: Exception) {}
-                    3 -> MaterialAlertDialogBuilder(this)
+                    3 -> startActivity(Intent(this, FirmwareActivity::class.java)
+                        .putExtra(FirmwareActivity.EXTRA_ADDRESS, workingAddress[d.id] ?: d.address)
+                        .putExtra(FirmwareActivity.EXTRA_TITLE, d.name.ifBlank { d.address }))
+                    4 -> MaterialAlertDialogBuilder(this)
                         .setMessage("Remove ${d.name.ifBlank { d.address }} from this app? The device itself is not changed.")
                         .setNegativeButton("Cancel", null)
                         .setPositiveButton("Remove") { _, _ ->

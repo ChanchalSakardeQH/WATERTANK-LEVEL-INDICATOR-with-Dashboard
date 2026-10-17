@@ -102,6 +102,12 @@ class DashboardActivity : AppCompatActivity() {
             when (it.itemId) {
                 R.id.action_reload -> { load(); true }
                 R.id.action_admin -> { if (adminToken != null) adminLogout() else adminLogin(); true }
+                R.id.action_firmware -> {
+                    startActivity(android.content.Intent(this, FirmwareActivity::class.java)
+                        .putExtra(FirmwareActivity.EXTRA_ADDRESS, intent.getStringExtra(EXTRA_ADDRESS))
+                        .putExtra(FirmwareActivity.EXTRA_TITLE, intent.getStringExtra(EXTRA_TITLE)))
+                    true
+                }
                 R.id.action_browser -> { openExternal(Uri.parse(baseUrl)); true }
                 else -> false
             }

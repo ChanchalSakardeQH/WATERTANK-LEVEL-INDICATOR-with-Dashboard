@@ -48,3 +48,6 @@ android/build/
 android/app/build/
 android/local.properties
 *.jks
+
+# Manufacturer service login (tools/new-service-key.ps1): never commit
+water_level_indicator/service_secret.h

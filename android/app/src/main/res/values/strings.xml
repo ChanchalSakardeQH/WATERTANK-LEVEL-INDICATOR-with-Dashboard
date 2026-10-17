@@ -45,4 +45,8 @@
         <item>Run the motor only when the tank needs it: see the level before you switch on.</item>
         <item>Water saved today is water for tomorrow.</item>
     </string-array>
+    <string name="firmware_title">Firmware update</string>
+    <string name="firmware_file">Choose a firmware file (.bin)…</string>
+    <string name="firmware_menu">Firmware update (service)</string>
+    <string name="firmware_note">For the manufacturer: needs the service login. Only the program is replaced: settings, Wi-Fi, passwords, calibration, history and logs are kept. Keep the phone near the tank and this screen open until the update is confirmed. If the upload is interrupted, the tank keeps running its current firmware.</string>
 </resources>

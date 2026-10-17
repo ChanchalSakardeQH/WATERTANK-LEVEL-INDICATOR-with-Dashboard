@@ -118,6 +118,7 @@ h3.sub{font-size:14px;margin:20px 0 6px;color:var(--text)}
 .dverdict{padding:12px;border-radius:10px;margin:10px 0;font-weight:600}.dverdict.ok{background:rgba(22,163,74,.12);color:var(--ok)}
 .dverdict.warn{background:rgba(217,119,6,.12);color:var(--warn)}.dverdict.bad{background:rgba(220,38,38,.12);color:var(--danger)}
 .dtable{width:100%;border-collapse:collapse;font-size:13px}.dtable td,.dtable th{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left}
+#loginRole{margin:0 0 12px}#otaControls[hidden]{display:none}
 .litres{font-size:15px;color:var(--muted);margin:-2px 0 8px;font-weight:600}
 .gstats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}.gstats .stat b{font-size:20px}
 .seg[id=segUsage]{margin-bottom:0}
@@ -489,7 +490,8 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
     <p class="help">In Arduino IDE use <b>Sketch → Export Compiled Binary</b>, then pick <b>water_level_indicator.ino.bin</b> from the sketch's
       <b>build</b> folder (not the .bootloader, .partitions or .merged file). Settings, Wi-Fi, calibration, history and logs are kept.</p>
     <input type="file" id="fileOta" accept=".bin,application/octet-stream" hidden onchange="otaPick(this)">
-    <div style="margin-top:12px"><button class="btn" id="btnOta" onclick="$('fileOta').click()">Choose firmware file…</button></div>
+    <div class="alert info" id="otaService"></div>
+    <div style="margin-top:12px" id="otaControls"><button class="btn" id="btnOta" onclick="$('fileOta').click()">Choose firmware file…</button></div>
     <div class="otaBar" id="otaBar" hidden><i id="otaFill"></i></div>
     <p class="help" id="otaMsg"></p>
   </section>
@@ -669,7 +671,8 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
   <div class="btns" style="margin-top:12px"><button class="btn" id="diagFix" hidden>Use this pulse</button>
     <button class="btn sec" onclick="$('diagModal').classList.remove('show')">Close</button></div>
 </div></div>
-<div class="modal" id="loginModal"><div class="card"><h2>ADMIN LOGIN</h2>
+<div class="modal" id="loginModal"><div class="card"><h2 id="loginTitle">ADMIN LOGIN</h2>
+  <div class="seg" id="loginRole" hidden><button data-r="admin" class="on">Admin</button><button data-r="service">Service (manufacturer)</button></div>
   <div class="field"><label for="inPw">Password</label><input type="password" id="inPw" autocomplete="current-password"></div>
   <p class="help" id="loginErr" style="color:var(--danger)"></p>
   <div class="btns" style="margin:0"><button class="btn sec" onclick="closeLogin()">Cancel</button><button class="btn" id="btnLogin" onclick="doLogin()">Log in</button></div>
@@ -1054,7 +1057,7 @@ const isAdmin=()=>!!(st&&st.auth&&st.auth.admin);
 let pwForced=false;
 function applyRole(){
   const a=isAdmin();document.body.classList.toggle('viewer',!a);
-  $('btnAdmin').textContent=a?'Log out':'Admin';$('btnAdmin').title=a?'Log out of admin':'Admin login';
+  $('btnAdmin').textContent=a?(isService()?'Log out (service)':'Log out'):'Admin';$('btnAdmin').title=a?'Log out':'Admin login';
   document.querySelectorAll('#tabs [data-tab=setup],#tabs [data-tab=log]').forEach(b=>b.hidden=!a);
   document.querySelectorAll('#aSet input,#aSet select,#aSet button').forEach(e=>e.disabled=!a);
   document.querySelectorAll('.adminLink').forEach(e=>e.hidden=!a);
@@ -1062,19 +1065,28 @@ function applyRole(){
   if(!a)$('banners').hidden=true;
   if(a&&st.auth.mustChange&&!$('pwModal').classList.contains('show'))openPwModal(true);
 }
-function openLogin(){$('loginErr').textContent='';$('inPw').value='';$('loginModal').classList.add('show');setTimeout(()=>$('inPw').focus(),50);}
+let loginRole='admin';
+const isService=()=>!!(st&&st.auth&&st.auth.service);
+function openLogin(role){loginRole=role||'admin';$('loginErr').textContent='';$('inPw').value='';
+  $('loginRole').hidden=!(st&&st.auth&&st.auth.serviceAvailable);
+  [...$('loginRole').children].forEach(b=>b.classList.toggle('on',b.dataset.r===loginRole));
+  $('loginTitle').textContent=loginRole==='service'?'SERVICE LOGIN':'ADMIN LOGIN';
+  $('loginModal').classList.add('show');setTimeout(()=>$('inPw').focus(),50);}
+[...$('loginRole').children].forEach(b=>b.onclick=()=>{loginRole=b.dataset.r;
+  [...$('loginRole').children].forEach(x=>x.classList.toggle('on',x===b));$('loginTitle').textContent=loginRole==='service'?'SERVICE LOGIN':'ADMIN LOGIN';});
 function closeLogin(){$('loginModal').classList.remove('show');}
 $('inPw').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 async function doLogin(){
   const pw=$('inPw').value;if(!pw)return;
   $('btnLogin').disabled=true;$('loginErr').textContent='';
   try{
-    const a=await (await fetch('/api/auth',{cache:'no-store'})).json();
+    const a=await (await fetch('/api/auth'+(loginRole==='service'?'?role=service':''),{cache:'no-store'})).json();
+    if(!a.salt){$('loginErr').textContent=a.message||'Login not available';$('btnLogin').disabled=false;return;}
     const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
       body:new URLSearchParams({proof:sha256(a.nonce+sha256(a.salt+pw))})});
     const j=await r.json();
     if(!j.ok)$('loginErr').textContent=j.message;
-    else{setToken(j.token);closeLogin();toast('Logged in as admin');await poll();}
+    else{setToken(j.token);closeLogin();toast(j.role==='service'?'Logged in as service (manufacturer)':'Logged in as admin');await poll();}
   }catch(e){$('loginErr').textContent='Could not reach the device';}
   $('btnLogin').disabled=false;
 }
@@ -1169,7 +1181,11 @@ let otaBusy=false;
 const kb=b=>b>=1048576?(b/1048576).toFixed(2)+' MB':Math.round(b/1024)+' KB';
 function verCmp(a,b){const x=a.split('.').map(Number),y=b.split('.').map(Number);
   for(let i=0;i<3;i++){if((x[i]||0)!==(y[i]||0))return (x[i]||0)-(y[i]||0);}return 0;}
-function renderOta(){$('otaCur').textContent=st.fw;$('otaBoard').textContent=st.board;$('otaMax').textContent=st.otaMax?kb(st.otaMax):'--';}
+function renderOta(){$('otaCur').textContent=st.fw;$('otaBoard').textContent=st.board;$('otaMax').textContent=st.otaMax?kb(st.otaMax):'--';
+  const svc=isService();$('otaControls').hidden=!svc;
+  setAlert($('otaService'),svc?'':'info',svc?'':st.auth.serviceAvailable?
+    'Firmware updates are done by the manufacturer. <a href="#" onclick="openLogin(\'service\');return false">Service login</a>':
+    'Firmware updates are done by the manufacturer with the Water Tanks Monitor app or by USB.');}
 async function otaPick(input){
   const f=input.files[0];input.value='';if(!f)return;
   const buf=new Uint8Array(await f.arrayBuffer());

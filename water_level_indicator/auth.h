@@ -26,6 +26,8 @@
 //   proof   = SHA256(nonceHex + SHA256(saltHex + password))
 //   device compares it with SHA256(nonceHex + storedHex) and returns a session token.
 // Default password "admin"; it has to be changed at the first login.
+// Manufacturer service login: a second role, set at build time (service_secret.h, see below), needed for firmware
+// updates and able to do everything an admin can (including setting a new admin password).
 // Holding the BOOT button for 10 s resets the password to "admin".
 // Note: the dashboard uses plain HTTP, so the session token itself is not encrypted on the network.
 #pragma once
@@ -155,6 +157,25 @@ static String randomHex(size_t bytes) {
   return toHex(b, bytes);
 }
 
+// ---------------- Manufacturer service login ----------------
+// tools/new-service-key.ps1 writes service_secret.h (never committed: it is in .gitignore):
+//   #define WTMS_SERVICE_SALT "<32 hex characters>"
+//   #define WTMS_SERVICE_HASH "<64 hex characters>"   // SHA256(salt + service password)
+// Only the salted hash is in the firmware. Without the file there is no service login (no default password).
+#if __has_include("service_secret.h")
+  #include "service_secret.h"
+#endif
+#if defined(WTMS_SERVICE_SALT) && defined(WTMS_SERVICE_HASH)
+  const bool SERVICE_AVAILABLE = true;
+  const char* const SERVICE_SALT = WTMS_SERVICE_SALT;
+  const char* const SERVICE_HASH = WTMS_SERVICE_HASH;
+#else
+  const bool SERVICE_AVAILABLE = false;
+  const char* const SERVICE_SALT = "";
+  const char* const SERVICE_HASH = "";
+#endif
+enum : uint8_t { ROLE_NONE = 0, ROLE_ADMIN = 1, ROLE_SERVICE = 2 };
+
 // ---------------- Stored password (EEPROM offset 416) ----------------
 struct AuthData {
   uint32_t magic;
@@ -168,10 +189,11 @@ AuthData auth;
 
 const unsigned long SESSION_IDLE_MS = 12UL * 3600UL * 1000UL;   // log out after 12 h without activity
 // Named AuthSession: the ESP8266 core already has a global "Session" (BearSSL::Session)
-struct AuthSession { char token[33]; unsigned long last; };
+struct AuthSession { char token[33]; unsigned long last; uint8_t role; };
 AuthSession authSessions[3];
 String   authNonce;
 unsigned long authNonceAt = 0;
+uint8_t  authNonceRole = ROLE_ADMIN;            // which password the current challenge is for
 uint8_t  authFails = 0;
 unsigned long authLockUntil = 0;
 
@@ -198,23 +220,25 @@ void authLoad() {
 
 String authSaltHex() { return toHex(auth.salt, 16); }
 
-// Checks the "auth" argument (form field or query) of the current request
+// Role of the session in the "auth" argument (form field or query) of the current request
 template <class Server>
-bool authIsAdmin(Server& server) {
+uint8_t authRole(Server& server) {
   String t = server.arg("auth");
-  if (t.length() != 32) return false;
+  if (t.length() != 32) return ROLE_NONE;
   unsigned long now = millis();
   for (AuthSession& s : authSessions) {
     if (s.token[0] && t == s.token) {
-      if (now - s.last > SESSION_IDLE_MS) { s.token[0] = 0; return false; }
+      if (now - s.last > SESSION_IDLE_MS) { s.token[0] = 0; return ROLE_NONE; }
       s.last = now;
-      return true;
+      return s.role;
     }
   }
-  return false;
+  return ROLE_NONE;
 }
+template <class Server> bool authIsAdmin(Server& server)   { return authRole(server) >= ROLE_ADMIN; }   // service included
+template <class Server> bool authIsService(Server& server) { return authRole(server) == ROLE_SERVICE; }
 
-String authNewSession() {
+String authNewSession(uint8_t role) {
   int slot = 0;
   for (int i = 1; i < 3; i++)                   // reuse the oldest (or an empty) slot
     if (!authSessions[i].token[0] || authSessions[i].last < authSessions[slot].last) slot = i;
@@ -223,6 +247,7 @@ String authNewSession() {
   strncpy(authSessions[slot].token, t.c_str(), 32);
   authSessions[slot].token[32] = 0;
   authSessions[slot].last = millis();
+  authSessions[slot].role = role;
   return t;
 }
 
@@ -231,12 +256,12 @@ void authEndSession(const String& t) {
     if (s.token[0] && t == s.token) s.token[0] = 0;
 }
 
-// Returns "" on success, otherwise the reason
+// Returns "" on success, otherwise the reason. The challenge (authNonceRole) says which password is checked.
 String authCheckProof(const String& proof) {
   unsigned long now = millis();
   if (authLockUntil && now < authLockUntil) return "Too many attempts. Wait a minute and try again.";
   if (!authNonce.length() || now - authNonceAt > 120000UL) return "Login expired. Try again.";
-  String expected = sha256Hex(authNonce + toHex(auth.hash, 32));
+  String expected = sha256Hex(authNonce + (authNonceRole == ROLE_SERVICE ? String(SERVICE_HASH) : toHex(auth.hash, 32)));
   authNonce = "";                              // one attempt per nonce
   uint8_t diff = proof.length() == 64 ? 0 : 1;
   for (unsigned int i = 0; i < 64 && i < proof.length(); i++) diff |= proof[i] ^ expected[i];

@@ -407,6 +407,7 @@ The top LED blinks blue whenever the hotspot is on. Every change is recorded in 
 | Setup tab (tank, calibration, site, display, power, Wi-Fi, device, backup) | hidden | ✓ |
 | Log tab | hidden | ✓ |
 | Restart the device, reset to defaults | ✗ | ✓ |
+| Firmware update | ✗ | service login only |
 
 - Press **Admin** in the header to log in. The **default password is `admin`**, and it must be changed at the first login (at least 6 characters).
 - **Forgot the password?** Hold the **BOOT** button (ESP32) or **FLASH** button (NodeMCU) for **10 seconds** until the strip flashes red. The password goes back to `admin`.
@@ -472,6 +473,32 @@ How often the sensor is read and how often an **open** dashboard refreshes (Setu
 - **Live mode for calibration:** while an admin has the Setup tab open, the device reads every 0.5 s and the page refreshes every 2 s.
   It returns to the saved profile 20 s after the Setup tab is closed.
 - The biggest continuous power user is the Wi-Fi radio, not the sensor. For the coolest, longest-lived setup, combine **Eco** with **Power saving**, the **On demand** hotspot and **Low/Medium** transmit power.
+
+## Field firmware updates from the Android app (firmware 3.3.0, app 1.4.0)
+
+For tanks already installed: update the firmware from the app, over the tank's own Wi-Fi or the router, without cables.
+
+| | |
+|---|---|
+| Who | Only the **manufacturer's service login**. A society admin cannot update firmware (but sees who can) |
+| What is kept | Everything except the program: settings, calibration, sensors, Wi-Fi, admin password, history and logs. The app checks site names, sensors and calibration after the restart |
+| Firmware source | **Bundled in the app** (newest version per board, SHA-256 checked) or a `.bin` file on the phone |
+| Checks before upload | ESP image, Water Tanks Monitor firmware, same board (ESP32 / ESP8266), fits the free space, warns about older or same versions |
+| If interrupted | The tank keeps its current firmware (the new one only runs after a complete, verified write) |
+
+**Manufacturer set-up, once:**
+
+1. `tools\new-service-key.bat` creates the service login: a random 20-character password (shown once, and saved encrypted for your Windows account; `-Show` shows it again) and `water_level_indicator\service_secret.h` with only a salted SHA-256 hash. That file is in `.gitignore`: never commit or share it.
+2. Build the firmware with it (Arduino IDE: **Sketch → Export Compiled Binary**), flash the tanks once by USB, and copy the `.bin` into `firmware\` (see `firmware/README.md`).
+3. Build the app: the firmware is packed in automatically.
+
+**In the field:** app → open the tank (or long-press it) → **Firmware update (service)** → service password → *Install bundled firmware 3.3.0* (or choose a `.bin`) → wait for "Updated to 3.3.0. Site names, sensors and calibration were kept."
+
+The web dashboard offers the same: **Admin → Service (manufacturer)** in the login window unlocks Setup → Firmware update.
+Without `service_secret.h` the firmware has no service login at all (no default password), so it can only be updated by USB.
+The service login can do everything an admin can, including setting a new admin password for a society that lost it.
+
+NodeMCU: firmware 3.x is larger than the ~500 KB a NodeMCU can take over Wi-Fi, so NodeMCU tanks are updated by USB.
 
 ## Firmware update over Wi-Fi (OTA)
 
