@@ -1,0 +1,11 @@
+D:\Android\Projects\WATERTANK-LEVEL-INDICATOR-with-Dashboard-V6\water-level-indicator\tools>.\new-service-key.bat
+[ok] Service key written: D:\Android\Projects\WATERTANK-LEVEL-INDICATOR-with-Dashboard-V6\water-level-indicator\water_level_indicator\service_secret.h
+[ok] Password saved for this Windows account only (show it again with -Show).
+
+  Service password:  LHifww5E5qjUE4NqVG9Z
+
+[!]  Store it in your password manager now. Anyone with it can update the firmware of your tanks.
+Next: build the firmware (Arduino IDE: Sketch > Export Compiled Binary) and copy the .bin into firmware\.
+Press any key to continue . . .
+
+D:\Android\Projects\WATERTANK-LEVEL-INDICATOR-with-Dashboard-V6\water-level-indicator\tools>
